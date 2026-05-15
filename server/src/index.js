@@ -20,12 +20,16 @@ import { claimPlayerName, verifyPlayer, queries } from './db.js';
 import { findOpponent, writeSnapshot, pruneOld } from './matchmaking.js';
 import { eloDelta, eloBucket } from './elo.js';
 
+// Logger: pretty-printed in dev (when pino-pretty is installed as a devDep),
+// raw JSON in production. Plain JSON streams cleanly to journalctl, which is
+// where the systemd service writes anyway — pretty-printing is dead weight.
+const isProd = process.env.NODE_ENV === 'production';
 const fastify = Fastify({
   // trustProxy: nginx terminates TLS and forwards real IPs via X-Forwarded-For.
   // Without this, rate-limit and logs key on the proxy's loopback address and
   // every request looks like it came from 127.0.0.1.
   trustProxy: true,
-  logger: { transport: { target: 'pino-pretty' } },
+  logger: isProd ? true : { transport: { target: 'pino-pretty' } },
   // Defense-in-depth: nginx caps client_max_body_size at 16k, but Fastify gets
   // its own limit so a misconfigured proxy can't sneak megabytes through.
   bodyLimit: 32 * 1024,
