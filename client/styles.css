@@ -1,0 +1,1719 @@
+/* ─── Polish layer ────────────────────────────────────────────────────────
+   Small one-shot animations and transitions that wake up otherwise-snappy UI.
+   Most are pure CSS triggered by short-lived classes (.just-filled, .just-lost,
+   .just-activated, .is-impact) added by the JS render layer.                */
+
+/* Phase fade-in — replays on every setPhase() call (ui.js toggles the class
+   off, forces a reflow, then re-adds it). 180ms is fast enough to feel like
+   a transition rather than a stall. */
+@keyframes phase-fade-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.phase-fade-in { animation: phase-fade-in 180ms ease both; }
+
+/* Adventure-step card stagger — each .event-card in the trio animates in with
+   a 60ms offset so the eye sweeps across the row instead of seeing all 4 pop
+   at once. Combined with the phase fade-in for a layered entry feel. */
+@keyframes card-stagger-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.adventure-trio .event-card { animation: card-stagger-in 260ms ease both; }
+.adventure-row-top    .event-card:nth-child(1) { animation-delay:   0ms; }
+.adventure-row-top    .event-card:nth-child(2) { animation-delay:  60ms; }
+.adventure-row-bottom .event-card:nth-child(1) { animation-delay: 120ms; }
+.adventure-row-bottom .event-card:nth-child(2) { animation-delay: 180ms; }
+
+/* Generic card hover + press. Applies to all .card elements (adventure events,
+   town shop items, stash items, berry picks, etc.) — but we strip the lift on
+   .disabled and .card.empty so unselectable cards don't seem clickable. */
+.card { transition: transform 120ms ease, box-shadow 120ms ease, filter 80ms ease; }
+.card:not(.disabled):not(.empty):hover  { transform: translateY(-2px); box-shadow: 0 6px 16px rgba(0,0,0,0.12); }
+.card:not(.disabled):not(.empty):active { transform: translateY(0);    filter: brightness(0.95); transition-duration: 60ms; }
+
+/* Button press — universal across primary + secondary buttons. */
+button { transition: transform 80ms ease, filter 80ms ease; }
+button:not(:disabled):active { transform: scale(0.96); filter: brightness(0.94); }
+
+/* Topbar step dot — when a new step becomes the "current" one, briefly pulse
+   the dot so the player notices the progression in the topbar. */
+@keyframes step-dot-pulse {
+  0%   { transform: scale(1);    box-shadow: 0 0 0 0 rgba(74,163,223,0.7); }
+  60%  { transform: scale(1.45); box-shadow: 0 0 0 8px rgba(74,163,223,0); }
+  100% { transform: scale(1);    box-shadow: 0 0 0 0 rgba(74,163,223,0); }
+}
+.step-dot.just-activated { animation: step-dot-pulse 520ms ease both; }
+
+/* Item slot fill — newly-arrived items scale in from 0.4 → 1.0 with a tiny
+   overshoot. Stripped after the first frame the class is missing so subsequent
+   renders don't replay. */
+@keyframes item-slot-fill {
+  0%   { transform: scale(0.4); opacity: 0; }
+  60%  { transform: scale(1.10); opacity: 1; }
+  100% { transform: scale(1);    opacity: 1; }
+}
+.item-slot.just-filled { animation: item-slot-fill 320ms ease both; }
+
+/* Money counter — a faint highlight pulse on any character change (cheap; we
+   trigger this by adding/removing a class via the tween RAF). Currently relies
+   on .money-pop being visible as the main affordance. The pulse is subtle so
+   it doesn't compete with the floating popup. */
+#money { transition: color 150ms ease; }
+
+/* Money floating popup — spawned by popMoneyDelta() in ui.js as a fixed-position
+   element under <body>, anchored to the money counter's bounding rect. Lives ~1.2s
+   before self-removal. Fixed positioning avoids being wiped by the tween rewriting
+   #money's textContent and also avoids overflowing the constrained topbar layout. */
+.money-pop {
+  position: fixed;
+  transform: translate(-100%, 0);          /* anchor to the right edge of #money */
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  pointer-events: none;
+  animation: money-pop-float 1.1s ease-out forwards;
+  z-index: 1500;
+  text-shadow: 0 1px 2px rgba(0,0,0,0.3);
+}
+.money-pop.gain { color: #3fb56a; }
+.money-pop.loss { color: #d97c4a; }
+@keyframes money-pop-float {
+  /* Compose with the static -100% X anchor (right edge of #money) by including it
+     in every keyframe — otherwise the keyframe transform would replace it entirely. */
+  0%   { transform: translate(-100%, 0);    opacity: 0; }
+  15%  { transform: translate(-100%, -2px); opacity: 1; }
+  80%  { transform: translate(-100%, -22px);opacity: 1; }
+  100% { transform: translate(-100%, -30px);opacity: 0; }
+}
+
+/* Strike flash — the lightning bolt that just turned spent shakes briefly red. */
+@keyframes strike-just-lost {
+  0%   { transform: translateX(0)    scale(1);   filter: drop-shadow(0 0 0 transparent); color: #d04545; }
+  20%  { transform: translateX(-3px) scale(1.3); color: #ff5454; filter: drop-shadow(0 0 6px rgba(255,80,80,0.9)); }
+  40%  { transform: translateX(3px)  scale(1.3); color: #ff5454; filter: drop-shadow(0 0 6px rgba(255,80,80,0.9)); }
+  60%  { transform: translateX(-2px) scale(1.2); color: #d04545; }
+  100% { transform: translateX(0)    scale(1);   color: inherit; filter: none; }
+}
+.strike.just-lost { animation: strike-just-lost 600ms ease both; }
+
+/* Battle: crit / super-effective sprite "impact" zoom. Class is added by the
+   animation loop for ~360ms when a hit lands as either a crit or super-effective.
+   Targets the slot's <img> sprite so the platform/HP bar stay still. */
+@keyframes battle-impact {
+  0%   { transform: scale(1); }
+  35%  { transform: scale(1.18) translateY(-2px); filter: brightness(1.35); }
+  100% { transform: scale(1); filter: none; }
+}
+.battle-slot.is-impact > img { animation: battle-impact 360ms ease both; }
+
+/* Imposter (Ditto) — slot is tagged with .is-imposter once the copy event fires.
+   The sprite was already swapped to the copied species via the engine + animation
+   playback; this adds a persistent purple glow so the player can tell this is a
+   Ditto copy, not the real Pokémon. */
+.battle-slot.is-imposter > img {
+  filter:
+    drop-shadow(0 0 4px rgba(178, 80, 218, 0.95))
+    drop-shadow(0 0 10px rgba(178, 80, 218, 0.55));
+}
+
+/* Battle: HP bar smooth tween. The fill element is .hpbar-fill — explicit width
+   transition lets sequential refreshSlot writes glide from old → new width
+   instead of snapping (no JS changes needed, just a CSS hint). */
+.hpbar-fill { transition: width 220ms ease-out; }
+
+/* Status badges (burn / poison / stun) pop in when first applied. To avoid
+   the animation replaying on every refreshSlot (which redraws the icon every
+   turn), we only animate when an applyBurn/Poison/Stun log event ran by adding
+   the .just-applied class to the slot for a single render — see the playback
+   loop in showBattleAnimation. */
+@keyframes status-pop {
+  0%   { transform: scale(0.4); opacity: 0; }
+  60%  { transform: scale(1.30); opacity: 1; }
+  100% { transform: scale(1);    opacity: 1; }
+}
+.battle-slot.just-applied .status-icon:last-child { animation: status-pop 280ms ease both; }
+
+/* PokéCenter Battle Continue button — subtle pulse so the player's eye snaps
+   to it after the verdict text appears.  */
+@keyframes continue-pulse {
+  0%, 100% { transform: scale(1);    box-shadow: 0 0 0 0 rgba(74,163,223,0.5); }
+  50%      { transform: scale(1.04); box-shadow: 0 0 0 6px rgba(74,163,223,0); }
+}
+#btn-continue:not(.hidden) { animation: continue-pulse 1.4s ease-in-out infinite; }
+
+/* ─── Confetti (gym/PvP wins + run-complete celebration) ───────────────── */
+/* Single fixed overlay layered above everything; each piece is positioned at top:-10vh
+   and falls past the bottom via the keyframe below. Per-piece color / rotation /
+   duration are set inline by confetti.js using CSS custom properties. */
+#confetti-layer {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  overflow: hidden;
+  z-index: 9999;
+}
+.confetti-piece {
+  position: absolute;
+  top: -10vh;
+  width: 9px;
+  height: 14px;
+  background: var(--accent);
+  animation-name: confetti-fall;
+  animation-timing-function: linear;
+  animation-fill-mode: forwards;
+  will-change: transform;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.15);
+}
+.confetti-piece.round { width: 10px; height: 10px; border-radius: 50%; }
+@keyframes confetti-fall {
+  0%   { transform: translateY(0)      rotate(var(--rotate-from)); }
+  100% { transform: translateY(115vh)  rotate(var(--rotate-to));   }
+}
+
+/* PokeMini — Wii-inspired palette */
+:root {
+  --bg: #f5f9fc;
+  --panel: #ffffff;
+  --panel-2: #e9f1f7;
+  --ink: #2a3a4a;
+  --ink-soft: #6c7c8c;
+  --accent: #4aa3df;
+  --accent-deep: #2d7fb8;
+  --warn: #d97c4a;
+  --good: #6ab85f;
+  --border: #c8d6e2;
+  --shadow: 0 2px 6px rgba(45,127,184,0.12);
+  --radius: 14px;
+  font-family: 'Nunito', 'Segoe UI', system-ui, sans-serif;
+}
+
+* { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; }
+body { background: var(--bg); color: var(--ink); }
+
+#app { max-width: 1100px; margin: 0 auto; padding: 16px; display: flex; flex-direction: column; min-height: 100vh; }
+
+.hidden { display: none !important; }
+
+/* ─── Options button + menu (fixed in top-right corner) ──────────────── */
+#options-btn {
+  position: fixed; top: 14px; right: 14px; z-index: 1100;
+  width: 38px; height: 38px; padding: 0;
+  background: var(--panel); color: var(--ink); border: 2px solid var(--border);
+  border-radius: 50%; box-shadow: var(--shadow);
+  font-size: 22px; font-weight: 900; line-height: 1;
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer;
+}
+#options-btn:hover:not(:disabled) {
+  background: var(--accent); color: white; border-color: var(--accent);
+  transform: none;        /* override the generic button hover */
+}
+#options-menu {
+  position: fixed; top: 60px; right: 14px; z-index: 1101;
+  background: var(--panel); border: 2px solid var(--border); border-radius: 10px;
+  box-shadow: 0 8px 20px rgba(0,0,0,0.18);
+  padding: 6px; min-width: 180px;
+}
+#options-menu .menu-item {
+  display: block; width: 100%; text-align: left;
+  background: transparent; border: none; box-shadow: none;
+  padding: 10px 12px; border-radius: 6px;
+  font-size: 14px; font-weight: 700; color: var(--ink);
+  cursor: pointer; letter-spacing: 0.01em;
+}
+#options-menu .menu-item:hover { background: var(--panel-2); transform: none; color: var(--ink); }
+#options-menu .menu-item.danger { color: var(--warn); }
+#options-menu .menu-item.danger:hover { background: rgba(217, 124, 74, 0.12); color: var(--warn); }
+/* Language picker — two flag buttons side by side, slightly larger than emoji default
+   so the country colors are easy to read. The active language gets a colored ring. */
+#options-menu .menu-section { padding: 8px 12px 4px; }
+#options-menu .menu-section-label {
+  font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em;
+  color: var(--ink-soft); font-weight: 700; margin-bottom: 6px;
+}
+#options-menu .lang-picker { display: flex; gap: 8px; }
+#options-menu .lang-flag {
+  line-height: 1; padding: 4px 8px; min-width: 0;
+  background: transparent; border: 2px solid var(--border); border-radius: 8px;
+  cursor: pointer;
+  filter: saturate(0.85);
+  display: inline-flex; align-items: center; justify-content: center;
+}
+/* Twemoji PNGs render as inline <img> — size them to roughly emoji-equivalent height. */
+#options-menu .lang-flag img {
+  width: 30px; height: 22px; display: block;
+  object-fit: contain;
+  /* Slight rounding so the image fits the button's rounded shape neatly. */
+  border-radius: 2px;
+}
+#options-menu .lang-flag:hover:not(:disabled) {
+  background: var(--panel-2); border-color: var(--accent); transform: none;
+  filter: saturate(1);
+}
+#options-menu .lang-flag.active {
+  border-color: var(--accent);
+  background: rgba(74, 163, 223, 0.12);
+  filter: saturate(1);
+}
+
+/* Pokédex button — sits directly below the Options button in the top-right corner.
+   Shown on the main menu and during runs. */
+#dex-btn {
+  position: fixed; top: 60px; right: 14px; z-index: 1100;
+  width: 38px; height: 38px; padding: 0;
+  background: var(--panel); color: var(--ink); border: 2px solid var(--border);
+  border-radius: 50%; box-shadow: var(--shadow);
+  font-size: 18px; line-height: 1;
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer;
+}
+#dex-btn:hover:not(:disabled) {
+  background: var(--accent); color: white; border-color: var(--accent);
+  transform: none;
+}
+
+/* Pokédex overlay — full-screen modal. Click outside .dex-shell or hit the × button
+   to close. Grid of every species with sprite, dex number, and name; hovering / clicking
+   an entry populates the right-side detail card with the full Pokémon-card view. */
+#dex-panel {
+  position: fixed; inset: 0;
+  background: rgba(20, 30, 45, 0.55);
+  backdrop-filter: blur(2px);
+  z-index: 1200;
+  display: flex; align-items: center; justify-content: center;
+  padding: 40px 20px;
+}
+.dex-shell {
+  background: var(--panel); border: 2px solid var(--border); border-radius: 14px;
+  box-shadow: 0 24px 60px rgba(0,0,0,0.35);
+  width: min(1100px, 100%);
+  max-height: 100%;
+  display: grid;
+  grid-template-rows: auto 1fr;
+  grid-template-columns: 1fr 360px;
+  grid-template-areas:
+    "header header"
+    "grid   detail";
+  overflow: hidden;
+}
+.dex-header {
+  grid-area: header;
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 14px 20px;
+  background: var(--panel-2); border-bottom: 1px solid var(--border);
+}
+.dex-title { font-size: 22px; font-weight: 800; color: var(--accent-deep); }
+.dex-meta  { font-size: 13px; color: var(--ink-soft); }
+.dex-close {
+  background: transparent; border: none; box-shadow: none;
+  font-size: 28px; line-height: 1; color: var(--ink); cursor: pointer;
+  padding: 0 6px; min-width: 0;
+}
+.dex-close:hover { color: var(--accent-deep); transform: none; }
+
+.dex-grid {
+  grid-area: grid;
+  overflow-y: auto;
+  padding: 16px;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
+  gap: 10px;
+  background: var(--panel);
+}
+.dex-item {
+  position: relative;
+  background: var(--panel-2);
+  border: 2px solid var(--border);
+  border-radius: 10px;
+  padding: 6px 4px 8px;
+  text-align: center;
+  cursor: pointer;
+  opacity: 0.10;
+  transition: opacity 120ms ease, border-color 120ms ease, transform 120ms ease;
+}
+.dex-item:hover { transform: translateY(-2px); border-color: var(--accent); }
+.dex-item.seen { opacity: 1; }
+.dex-item.won {
+  border-color: #f4c542;
+  box-shadow: 0 0 0 1px #f4c542 inset, 0 4px 12px rgba(244,197,66,0.25);
+}
+.dex-item img {
+  width: 64px; height: 64px;
+  object-fit: contain;
+  display: block;
+  margin: 0 auto;
+}
+.dex-item .dex-num {
+  font-size: 11px; color: var(--ink-soft);
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+.dex-item .dex-name {
+  font-size: 12px; font-weight: 700;
+  color: #b0b0b0;                       /* light gray — used for unseen entries */
+  margin-top: 2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.dex-item.seen .dex-name { color: var(--ink); }
+.dex-item.won  .dex-name { color: var(--accent-deep); }
+.dex-medal {
+  position: absolute;
+  top: 4px; right: 4px;
+  font-size: 16px;
+  line-height: 1;
+  filter: drop-shadow(0 1px 2px rgba(0,0,0,0.3));
+  pointer-events: none;
+}
+
+.dex-detail {
+  grid-area: detail;
+  border-left: 1px solid var(--border);
+  background: var(--panel-2);
+  overflow-y: auto;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+}
+.dex-detail-empty {
+  color: var(--ink-soft);
+  font-size: 13px;
+  text-align: center;
+  margin: auto 0;
+  font-style: italic;
+}
+.dex-card {
+  display: flex; flex-direction: column;
+  gap: 10px;
+  padding: 8px;
+}
+.dex-card-sprite {
+  width: 128px; height: 128px;
+  object-fit: contain;
+  margin: 0 auto;
+  background: rgba(74,163,223,0.06);
+  border-radius: 10px;
+}
+.dex-card-header { text-align: center; }
+.dex-card-num { font-size: 12px; color: var(--ink-soft); font-weight: 700; }
+.dex-card-name { font-size: 22px; font-weight: 800; color: var(--accent-deep); }
+.dex-card-types { display: flex; justify-content: center; gap: 6px; margin: 4px 0; }
+.dex-card-stats {
+  display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px;
+  text-align: center; font-size: 12px;
+  padding: 8px; background: var(--panel); border-radius: 8px;
+}
+.dex-card-stats .stat-val { font-size: 18px; font-weight: 800; color: var(--ink); }
+.dex-card-stats .stat-label { font-size: 10px; color: var(--ink-soft); text-transform: uppercase; letter-spacing: 0.06em; }
+.dex-card-evo {
+  text-align: center;
+  font-size: 12px;
+  color: var(--ink-soft);
+  padding: 6px 8px;
+  background: rgba(74,163,223,0.06);
+  border-radius: 6px;
+  margin: 4px 0;
+}
+.dex-card-evo b { color: var(--ink); font-weight: 700; }
+.dex-card-ability {
+  text-align: center; font-size: 14px; font-weight: 700; color: var(--accent-deep);
+  margin-top: 4px;
+}
+.dex-card-ability-desc {
+  font-size: 12px; color: var(--ink-soft); line-height: 1.4;
+  text-align: center;
+}
+.dex-card.unseen-card .dex-card-sprite,
+.dex-card.unseen-card .dex-card-name,
+.dex-card.unseen-card .dex-card-types,
+.dex-card.unseen-card .dex-card-stats,
+.dex-card.unseen-card .dex-card-ability,
+.dex-card.unseen-card .dex-card-ability-desc { filter: brightness(0.4) grayscale(1); }
+.dex-card.unseen-card .dex-card-sprite { filter: brightness(0) grayscale(1) opacity(0.85); }
+
+/* Responsive: stack the detail panel below the grid on narrow viewports. */
+@media (max-width: 760px) {
+  .dex-shell {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto auto 1fr;
+    grid-template-areas:
+      "header"
+      "detail"
+      "grid";
+  }
+  .dex-detail { border-left: none; border-bottom: 1px solid var(--border); max-height: 240px; }
+}
+
+button {
+  font-family: inherit; font-size: 15px; font-weight: 600;
+  background: var(--panel); color: var(--accent-deep);
+  border: 2px solid var(--border); border-radius: var(--radius);
+  padding: 10px 18px; cursor: pointer; transition: all 0.15s;
+  box-shadow: var(--shadow);
+}
+button:hover:not(:disabled) { background: var(--accent); color: white; border-color: var(--accent); transform: translateY(-1px); }
+button:disabled { opacity: 0.4; cursor: not-allowed; }
+button.primary { background: var(--accent); color: white; border-color: var(--accent); }
+button.primary:hover { background: var(--accent-deep); border-color: var(--accent-deep); }
+
+#topbar {
+  display: grid; grid-template-columns: 1fr auto 1fr; align-items: center;
+  background: var(--panel); border: 2px solid var(--border); border-radius: var(--radius);
+  padding: 10px 64px 10px 18px; box-shadow: var(--shadow); margin-bottom: 12px;
+  gap: 16px;                                  /* extra right padding leaves room for the fixed options button */
+}
+.topbar-left  { display: flex; align-items: center; gap: 12px; justify-self: start; }
+.topbar-right { display: flex; align-items: center; gap: 18px; justify-self: end; }
+#player-name { font-size: 18px; font-weight: 700; }
+.rank { font-size: 13px; padding: 4px 10px; border-radius: 8px; background: var(--panel-2); color: var(--ink-soft); }
+
+/* Badges — 5 slots that fill as the player earns them. CSS-drawn colored circles. */
+.badges-row { display: flex; gap: 5px; }
+.badge-slot {
+  width: 20px; height: 20px; border-radius: 50%;
+  border: 2px dashed rgba(80,100,120,0.28); background: transparent;
+  transition: all 0.2s;
+}
+.badge-slot.filled {
+  border: 2px solid rgba(0,0,0,0.15);
+  box-shadow: 0 1px 3px rgba(0,0,0,0.25), inset 0 1px 2px rgba(255,255,255,0.5);
+}
+.badge-slot.filled.b1 { background: radial-gradient(circle at 35% 30%, #cfa97a, #9c7a4a); }   /* Boulder */
+.badge-slot.filled.b2 { background: radial-gradient(circle at 35% 30%, #8fb4ff, #4070d0); }   /* Cascade */
+.badge-slot.filled.b3 { background: radial-gradient(circle at 35% 30%, #ffe060, #d9a830); }   /* Thunder */
+.badge-slot.filled.b4 { background: radial-gradient(circle at 35% 30%, #d878d0, #8030a0); }   /* Rainbow */
+.badge-slot.filled.b5 { background: radial-gradient(circle at 35% 30%, #ff90a8, #d04068); }   /* Soul */
+
+/* Strikes — three lightning marks that grey out as strikes are spent. */
+.strikes-row { display: flex; gap: 2px; font-size: 18px; line-height: 1; }
+.strike { filter: none; transition: filter 0.2s, opacity 0.2s; }
+.strike.spent { filter: grayscale(1) brightness(0.6); opacity: 0.35; }
+
+.money-display { font-size: 16px; font-weight: 700; color: var(--ink); position: relative; }
+.money-display::before { content: '$'; color: var(--accent-deep); margin-right: 1px; }
+
+/* Step dots in top bar (shown only during adventure phase). */
+.topbar-center { display: flex; gap: 8px; justify-self: center; }
+.topbar-center .step-dot {
+  width: 12px; height: 12px; border-radius: 50%;
+  background: rgba(80,100,120,0.18);
+  transition: all 0.2s;
+}
+.topbar-center .step-dot.done    { background: var(--accent); }
+.topbar-center .step-dot.current { background: var(--accent-deep); box-shadow: 0 0 0 3px rgba(74,163,223,0.25); }
+
+#phase-host {
+  background: var(--panel); border: 2px solid var(--border); border-radius: var(--radius);
+  padding: 24px; box-shadow: var(--shadow); flex: 1; margin-bottom: 12px;
+  min-height: 400px;
+}
+.phase-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 18px; padding-bottom: 12px; border-bottom: 1px solid var(--border); }
+.phase-title { font-size: 22px; font-weight: 700; color: var(--accent-deep); }
+.phase-subtitle { font-size: 14px; color: var(--ink-soft); }
+
+#bottombar { display: flex; gap: 12px; align-items: stretch; }
+/* ─── Pokémon type colors (canon) ───────────────────────────── */
+.type-capsule {
+  display: inline-flex; align-items: center; gap: 3px;
+  padding: 2px 8px; border-radius: 10px;
+  font-size: 9px; font-weight: 800; letter-spacing: 0.05em; text-transform: uppercase;
+  color: white; line-height: 1.2;
+}
+.type-capsule.type-normal   { background: #a8a878; }
+.type-capsule.type-fire     { background: #f08030; }
+.type-capsule.type-water    { background: #6890f0; }
+.type-capsule.type-electric { background: #f8d030; color: #4a3a10; }
+.type-capsule.type-grass    { background: #78c850; }
+.type-capsule.type-ice      { background: #98d8d8; color: #1a4a5a; }
+.type-capsule.type-fighting { background: #c03028; }
+.type-capsule.type-poison   { background: #a040a0; }
+.type-capsule.type-ground   { background: #e0c068; color: #4a3a10; }
+.type-capsule.type-flying   { background: #a890f0; }
+.type-capsule.type-psychic  { background: #f85888; }
+.type-capsule.type-bug      { background: #a8b820; }
+.type-capsule.type-rock     { background: #b8a038; }
+.type-capsule.type-ghost    { background: #705898; }
+.type-capsule.type-dragon   { background: #7038f8; }
+
+/* ─── Team grid + slot card ─────────────────────────────────── */
+.team-grid { display: grid; grid-template-columns: repeat(3, 1fr); grid-template-rows: auto auto; gap: 8px;
+  background: var(--panel); border: 2px solid var(--border); border-radius: var(--radius);
+  padding: 10px; box-shadow: var(--shadow); flex: 1;
+}
+.slot {
+  background: var(--panel-2); border: 2px solid var(--border); border-radius: 12px;
+  padding: 8px; display: grid; grid-template-rows: auto auto;
+  gap: 6px; min-height: 160px; position: relative; cursor: grab;
+  transition: border-color 0.15s, background 0.15s, transform 0.15s;
+}
+.slot:hover:not(.empty) { transform: translateY(-1px); }
+
+/* Release button — floats in the top-left of each team slot. Only rendered when the
+   player has more than one Pokémon (see renderTeam). The mousedown handler in JS stops
+   propagation so clicking this button doesn't trigger the slot's drag. */
+.slot .slot-release {
+  position: absolute;
+  top: 4px; left: 4px;
+  width: 22px; height: 22px;
+  background: rgba(255, 255, 255, 0.92); color: var(--warn);
+  border: 1.5px solid var(--warn); border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 16px; font-weight: 900; line-height: 1;
+  cursor: pointer; padding: 0; box-shadow: none;
+  z-index: 3;
+  transition: background 0.12s, color 0.12s, transform 0.12s;
+}
+.slot .slot-release:hover:not(:disabled) {
+  background: var(--warn); color: white;
+  transform: scale(1.1);
+}
+.slot.drag-over { border-style: solid; border-color: var(--accent); background: #e0eef8; }
+.slot.empty {
+  opacity: 0.5; cursor: default; min-height: 160px;
+  display: flex; align-items: center; justify-content: center; border-style: dashed;
+}
+.slot.empty .slot-empty-label { font-size: 14px; font-weight: 700; color: var(--ink-soft); letter-spacing: 0.05em; }
+.slot.fainted { opacity: 0.4; filter: grayscale(1); }
+/* Daycare: grey out the card content but keep the "At Daycare" tag fully opaque. Opacity is
+   applied to inner regions (not the slot) so the absolutely-positioned tag stays vivid. */
+.slot.in-daycare { cursor: not-allowed; position: relative; }
+.slot.in-daycare > .slot-main,
+.slot.in-daycare > .slot-ability { opacity: 0.45; filter: grayscale(0.9); }
+.daycare-tag {
+  position: absolute;
+  top: 8px; right: 8px;
+  background: var(--accent-deep);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 4px 8px;
+  border-radius: 6px;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.25);
+  pointer-events: none;
+  z-index: 3;
+}
+
+.slot-main { display: grid; grid-template-columns: 96px 1fr; gap: 10px; align-items: flex-start; }
+.slot-sprite {
+  width: 96px; height: 96px; image-rendering: auto;
+  align-self: center;
+  background: rgba(74,163,223,0.06); border-radius: 10px;
+}
+.slot-info { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+.slot-header { display: flex; justify-content: space-between; align-items: baseline; gap: 6px; }
+.slot-name {
+  font-size: 16px; font-weight: 800; color: var(--ink);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.slot-level { font-size: 12px; font-weight: 700; color: var(--ink-soft); flex-shrink: 0; }
+.slot-types { display: flex; gap: 4px; flex-wrap: wrap; }
+
+.slot-stats { display: grid; grid-template-rows: repeat(3, auto); gap: 3px; margin-top: 2px; }
+.stat-row { display: grid; grid-template-columns: 28px 1fr auto; gap: 6px; align-items: center; }
+.stat-row label { font-size: 9px; font-weight: 800; color: var(--ink-soft); letter-spacing: 0.05em; }
+.stat-bar { height: 7px; background: #e0e8ee; border-radius: 4px; overflow: hidden; }
+.stat-bar > div { height: 100%; transition: width 0.3s; }
+.stat-bar.hp  > div { background: linear-gradient(90deg, #6ab85f, #4ea84f); }
+.stat-bar.atk > div { background: linear-gradient(90deg, #e15a3d, #c84032); }
+.stat-bar.spd > div { background: linear-gradient(90deg, #f1c453, #d9a830); }
+.stat-row .stat-val { font-size: 10px; font-weight: 700; color: var(--ink); min-width: 36px; text-align: right; }
+.stat-row .stat-val.hp-low { color: var(--warn); }
+
+.slot-ability {
+  font-size: 11px; color: var(--ink); line-height: 1.35;
+  padding: 6px 6px 0; border-top: 1px solid var(--border);
+}
+
+/* Starter pick / wild encounter / trade — uses the .slot card layout. */
+.starter-grid {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 16px; max-width: 1000px; margin: 0 auto;
+}
+.slot.starter-pick {
+  cursor: pointer;
+  background: var(--panel);
+  min-height: 200px;
+  border-width: 2px;
+}
+.slot.starter-pick:hover {
+  border-color: var(--accent);
+  background: #e8f2fa;
+  transform: translateY(-3px);
+  box-shadow: 0 6px 16px rgba(45,127,184,0.15);
+}
+.slot.starter-pick .slot-name { font-size: 18px; }
+
+/* Non-interactive display card (wild encounter, trade offer) */
+.slot.display {
+  cursor: default;
+  background: var(--panel);
+}
+.slot.display:hover { transform: none; }
+
+/* Trading screen — drop zone vs. offered Pokémon */
+.trade-stage {
+  display: grid; grid-template-columns: 1fr auto 1fr;
+  gap: 24px; align-items: center; max-width: 900px; margin: 16px auto 8px;
+}
+.trade-side { display: flex; flex-direction: column; align-items: center; gap: 8px; min-width: 0; }
+.trade-side .slot.display { width: 100%; max-width: 340px; }
+.trade-dropzone {
+  width: 100%; max-width: 340px; min-height: 200px;
+  border: 2.5px dashed var(--border); border-radius: 12px;
+  background: var(--panel-2);
+  display: flex; align-items: center; justify-content: center;
+  color: var(--ink-soft); font-size: 13px; font-weight: 600; letter-spacing: 0.04em;
+  text-transform: uppercase;
+  transition: all 0.15s;
+}
+.trade-dropzone.drag-over {
+  border-color: var(--accent); border-style: solid; background: #e0eef8;
+  color: var(--accent-deep); transform: scale(1.02);
+}
+.trade-arrow {
+  font-size: 32px; font-weight: 800; color: var(--accent-deep);
+  user-select: none;
+}
+
+@media (max-width: 700px) {
+  .trade-stage { grid-template-columns: 1fr; gap: 14px; }
+  .trade-arrow { transform: rotate(90deg); align-self: center; }
+}
+
+/* Adventure event cards — compact, rectangular, header on top + small image below. */
+/* Two-class selector (.choices.event-choices, specificity 0,2,0) beats the plain
+   ".choices" (0,1,0) rule below — otherwise the later ".choices" auto-fill
+   declaration silently overrides this auto-fit one and squeezes adventure cards
+   down to the minimum track size. */
+.choices.event-choices {
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+}
+
+/* Adventure step layout: 2×2 grid. Top row = Wild + Trainer (always shown).
+   Bottom row = PokéCenter (always shown, dimmed when team is healthy) + Special (rolled).
+   Both rows share the same flex sizing so cards line up across the grid. */
+.adventure-trio {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 14px;
+  margin: 12px 0 0;
+}
+.adventure-row {
+  display: flex;
+  gap: 14px;
+  justify-content: center;
+  flex-wrap: wrap;
+  width: 100%;
+}
+.adventure-row .card.event-card {
+  /* 2 cards per row → each fills (100% - 14px gap) / 2 of the row width. */
+  flex: 1 1 calc(50% - 7px);
+  max-width: calc(50% - 7px);
+}
+/* Vertically compact event cards — was 180px min-height; now ~135px with tighter
+   header padding so the 2×2 grid fits comfortably in the phase host. */
+.card.event-card { min-height: 135px; }
+
+/* Lost Stash event — three item cards in a row, click one to add to inventory. */
+.choices.stash-choices { grid-template-columns: repeat(3, 1fr); max-width: 720px; margin: 24px auto 0; }
+.card.stash-item { text-align: center; padding: 14px; cursor: pointer; }
+.card.stash-item .item-icon-wrap { display: flex; justify-content: center; align-items: center; height: 96px; }
+.card.stash-item .item-icon-wrap img { width: 80px; height: 80px; image-rendering: pixelated; }
+.card.stash-item .name { font-size: 16px; font-weight: 800; color: var(--accent-deep); margin: 8px 0 4px; }
+.card.stash-item .cost { font-size: 12px; color: var(--ink-soft); line-height: 1.35; }
+.card.event-card .card-header { padding: 6px 10px; }
+.card.event-card .card-header .ctitle { font-size: 14px; }
+.card.event-card .card-header .cdesc { font-size: 10px; line-height: 1.2; }
+/* Visual disable for the Wild card while Repel is active. The lock badge is overlaid
+   above the card art and the whole tile is desaturated + pointer-events stripped. */
+.event-card.disabled { opacity: 0.55; filter: grayscale(0.9); cursor: not-allowed; pointer-events: none; position: relative; }
+.event-card-lock {
+  position: absolute;
+  top: 50%; left: 50%;
+  transform: translate(-50%, -50%);
+  background: rgba(45, 127, 184, 0.92);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 6px 12px;
+  border-radius: 6px;
+  pointer-events: none;
+  z-index: 2;
+  filter: grayscale(0);
+}
+.card.event-card {
+  padding: 0; overflow: hidden;
+  display: flex; flex-direction: column;
+  min-height: 180px;
+}
+.card.event-card .card-header {
+  background: var(--panel-2);
+  padding: 8px 14px;
+  text-align: center;
+}
+.card.event-card .card-header .ctitle {
+  font-size: 15px; font-weight: 800; color: var(--accent-deep); margin: 0 0 2px;
+}
+.card.event-card .card-header .cdesc {
+  font-size: 11px; color: var(--ink-soft); line-height: 1.25;
+}
+.card.event-card .card-image {
+  flex: 1;
+  display: flex; align-items: center; justify-content: center;
+  gap: 6px; padding: 0;
+  background: var(--panel);
+  position: relative;
+  overflow: hidden;
+}
+
+/* Default event image (non-trainer) — fills the card-image area like a background.
+   Pixel-art rendering (sharp/crisp edges) for retro game vibe on the event illustrations. */
+.card.event-card:not(.is-trainer) .event-image {
+  position: absolute; inset: 0;
+  width: 100%; height: 100%;
+  max-width: none; max-height: none;
+  object-fit: cover;
+  image-rendering: pixelated;
+  display: block;
+}
+
+/* Trainer battle card — trainer.png as a covering background; foreground in a single horizontal row.
+   Layout: [trainer sprite] [team-preview row (up to 4 sprites, doubled in size)] */
+.card.event-card.is-trainer .card-image {
+  flex-direction: row;
+  justify-content: center;
+  gap: 8px;
+  padding: 8px 10px;
+  background-image: url('assets/events/trainer.png');
+  background-size: cover;
+  background-position: center;
+  image-rendering: pixelated;
+}
+.card.event-card.is-trainer .event-image.trainer-event-sprite {
+  width: auto; height: auto;
+  max-width: 72px; max-height: 100%;
+  object-fit: contain; flex-shrink: 0;
+}
+.card.event-card.is-trainer .trainer-preview {
+  flex-wrap: nowrap; gap: 4px; flex-shrink: 1;
+}
+.card.event-card.is-trainer .trainer-preview-sprite {
+  width: 64px; height: 64px;
+  padding: 2px;
+}
+.card.event-card.is-trainer .card-image::after {
+  content: ''; position: absolute; inset: 0;
+  background: rgba(255,255,255,0.55);   /* whiten the backdrop for foreground contrast */
+  pointer-events: none;
+}
+.card.event-card.is-trainer .card-image > * {
+  position: relative; z-index: 1;
+}
+
+/* Pre-battle prep screen — large gym-leader Pokémon preview (4× the adventure event-card
+   sprite size). Uses its own class so the adventure-trainer card preview is unaffected. */
+.prebattle-preview { display: flex; gap: 12px; flex-wrap: wrap; justify-content: center; margin: 12px 0; }
+.prebattle-preview-sprite {
+  width: 76px; height: 76px;
+  image-rendering: auto;
+  background: rgba(74,163,223,0.06);
+  border-radius: 10px;
+  padding: 4px;
+}
+
+/* Wild encounter card — wild.png as a covering background (whitened for foreground
+   contrast, same pattern as the trainer card), with a wrapping grid of every species
+   that could roll from the current zone's wild pool. */
+.card.event-card.is-wild .card-image {
+  flex-direction: column;
+  align-items: center; justify-content: center;
+  padding: 4px 2px;                  /* near-edge — let sprites breathe horizontally */
+  background-image: url('assets/events/wild.png');
+  background-size: cover;
+  background-position: center;
+  image-rendering: pixelated;
+}
+.card.event-card.is-wild .card-image::after {
+  content: ''; position: absolute; inset: 0;
+  background: rgba(255,255,255,0.6);
+  pointer-events: none;
+}
+.card.event-card.is-wild .card-image > * {
+  position: relative; z-index: 1;
+}
+/* Single-row layout — each sprite has a 48px ideal width but can shrink down so the
+   entire pool fits on one line regardless of zone size. aspect-ratio: 1 keeps them
+   square as they're compressed. max-width caps each sprite so small pools don't blow
+   up to fill the row. No background plate behind the sprite.
+   The flex box stays at 48px — sprite art is then visually scaled 1.2× via transform
+   (transforms don't affect layout) and offset alternately ±5px vertically for a zigzag
+   look. overflow:visible lets the scaled+translated art spill outside the 48-box without
+   getting clipped by the row. */
+.wild-preview {
+  display: flex; flex-wrap: nowrap; gap: 1px;
+  justify-content: center; align-items: center;
+  width: 100%; max-width: 100%;
+  overflow: visible;
+}
+.wild-preview-sprite {
+  flex: 0 1 48px;                /* ideal 48px, allowed to shrink, never grow */
+  min-width: 0; max-width: 48px;
+  height: auto; aspect-ratio: 1 / 1;
+  image-rendering: auto;
+  object-fit: contain;
+  transform-origin: center;
+}
+.wild-preview-sprite:nth-child(odd)  { transform: scale(1.32) translateY(-5px); }
+.wild-preview-sprite:nth-child(even) { transform: scale(1.32) translateY( 5px); }
+
+/* Mini team preview row used in the trainer event card. */
+.trainer-preview { display: flex; gap: 4px; flex-wrap: wrap; justify-content: center; }
+.trainer-preview-sprite {
+  width: 38px; height: 38px;
+  image-rendering: auto;
+  background: rgba(74,163,223,0.10);
+  border-radius: 6px;
+  padding: 2px;
+}
+
+/* Town — drop zone for selling Pokémon. Sized to match a single team slot card. */
+.sell-zone {
+  width: 300px; height: 160px; margin: 24px auto;
+  border: 2.5px dashed var(--border); border-radius: 12px;
+  background: var(--panel-2);
+  display: flex; align-items: center; justify-content: center;
+  color: var(--ink-soft); font-size: 13px; font-weight: 700; letter-spacing: 0.04em;
+  text-transform: uppercase;
+  transition: all 0.15s;
+  padding: 12px;
+  text-align: center;
+}
+.sell-zone.drag-over {
+  border-color: var(--accent); border-style: solid; background: #e0eef8;
+  color: var(--accent-deep); transform: scale(1.01);
+}
+/* In-progress sell preview shown while a Pokémon is dragged over the zone.
+   pointer-events:none ensures the span doesn't capture drag events itself —
+   otherwise it'd fire spurious dragenter/dragleave on the parent. */
+.sell-zone .sell-preview {
+  font-size: 28px; font-weight: 900; letter-spacing: 0.02em;
+  color: var(--good); text-transform: none;
+  pointer-events: none;
+}
+.sell-zone .sell-preview.blocked {
+  color: var(--warn); font-size: 16px; text-transform: uppercase; letter-spacing: 0.05em;
+}
+
+/* Compact backwards-compat HP bar (used inside battle slots) */
+.hpbar { width: 100%; height: 4px; background: #e0e8ee; border-radius: 2px; overflow: hidden; margin-top: 2px; }
+.hpbar > div { height: 100%; background: var(--good); transition: width 0.3s; }
+.hpbar > div.low { background: var(--warn); }
+
+.items { display: flex; flex-direction: column; gap: 6px; width: 100px;
+  background: var(--panel); border: 2px solid var(--border); border-radius: var(--radius);
+  padding: 8px; box-shadow: var(--shadow);
+}
+.item-slot { flex: 1; min-height: 60px; border: 1.5px dashed var(--border); border-radius: 8px;
+  background: var(--panel-2); display: flex; align-items: center; justify-content: center;
+  flex-direction: column; gap: 2px;
+  font-size: 10px; font-weight: 600; color: var(--ink-soft); cursor: grab;
+  padding: 4px;
+}
+.item-slot.filled { background: var(--panel); color: var(--ink); border-style: solid; }
+.item-slot.drag-over { border-color: var(--accent); }
+.item-slot .item-icon { width: 32px; height: 32px; object-fit: contain; image-rendering: auto; }
+/* Small berries reuse the regular berry art but render visibly smaller in the slot so
+   the player can distinguish "full" berries (+20) from "small" ones (+5) at a glance. */
+.item-slot .item-icon.item-icon-small { width: 22px; height: 22px; opacity: 0.85; }
+.item-slot .item-name { font-size: 10px; text-align: center; line-height: 1.1; }
+
+/* Item icon for town shop cards — small and centered. */
+.card-item-icon {
+  width: 28px; height: 28px; object-fit: contain;
+  display: block; margin: 4px auto 6px; image-rendering: auto;
+}
+
+/* ─── Town shop item card — horizontal layout ────────────────────────────
+   Tiny icon on the left, [name + price] on the same line on the right,
+   description underneath. Keeps each shop card lean vertically. */
+.card.shop-item {
+  display: flex; align-items: flex-start; gap: 12px;
+  text-align: left; padding: 10px 14px;
+}
+.card.shop-item .card-item-icon {
+  width: 56px; height: 56px;            /* 4x the previous size — readable at a glance */
+  margin: 0;                            /* centered vertically within the flex row via align-items */
+  flex-shrink: 0; display: block;
+}
+.card.shop-item { align-items: center; }
+.card.shop-item .shop-item-info {
+  flex: 1; min-width: 0;
+  display: flex; flex-direction: column; gap: 2px;
+}
+.card.shop-item .shop-item-head {
+  display: flex; justify-content: space-between; align-items: baseline; gap: 10px;
+}
+.card.shop-item .shop-item-head .ctitle { margin: 0; font-size: 15px; }
+.card.shop-item .shop-item-head .cost { font-size: 14px; white-space: nowrap; }
+.card.shop-item .csub { font-size: 12px; line-height: 1.35; }
+
+/* Berry Gathering pick container — flex with centered cards. Flex (instead of the
+   default .choices grid) lets the visible cards stay actually centered, because
+   the grid's auto-fill would otherwise reserve empty trailing tracks and pin the
+   cards to the left side. */
+.berry-choices {
+  display: flex; flex-wrap: wrap; justify-content: center; gap: 14px;
+}
+.berry-choices > .card { width: 240px; flex: 0 0 auto; }
+
+/* Town shop item container — same centered-flex treatment as .berry-choices.
+   Cards keep a fixed width (so buying one doesn't stretch the others) and the
+   remaining visible cards stay grouped in the horizontal center of the row. */
+.town-choices {
+  display: flex; flex-wrap: wrap; justify-content: center; gap: 14px;
+}
+.town-choices > .card { width: 260px; flex: 0 0 auto; }
+
+/* Town shop reroll button — lives in the right slot of the phase header, opposite
+   the "Town — <zone>" title. Compact, themed accent color, dims when disabled. */
+.town-reroll-btn {
+  font-size: 13px; font-weight: 700;
+  padding: 8px 14px;
+  border-radius: 8px;
+  background: var(--accent);
+  color: white;
+  border: none;
+  display: inline-flex; align-items: center; gap: 4px;
+  cursor: pointer;
+  box-shadow: 0 2px 6px rgba(74,163,223,0.25);
+}
+.town-reroll-btn:hover:not(:disabled) {
+  background: var(--accent-deep);
+}
+.town-reroll-btn:disabled {
+  background: var(--panel-2);
+  color: var(--ink-soft);
+  cursor: not-allowed;
+  box-shadow: none;
+}
+.town-reroll-btn .reroll-cost {
+  font-weight: 800;
+  background: rgba(0,0,0,0.15);
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+/* Berry Gathering pick screen — horizontal layout, small berry icon on the right,
+   name + description on the left. The double-class selector beats the generic
+   ".card img { width:80px; height:80px; ... }" rule that was previously forcing
+   these icons up to 80px regardless of .berry-pick-icon's intended size. */
+.card.berry-pick {
+  display: flex; align-items: center; gap: 12px;
+  text-align: left; padding: 10px 14px;
+}
+.card.berry-pick .berry-pick-info {
+  flex: 1; min-width: 0;
+  display: flex; flex-direction: column; gap: 2px;
+}
+.card.berry-pick .berry-pick-info .ctitle { margin: 0; font-size: 15px; }
+.card.berry-pick .berry-pick-info .csub   { font-size: 12px; line-height: 1.35; }
+.card.berry-pick .berry-pick-icon {
+  width: 32px; height: 32px; object-fit: contain;
+  flex-shrink: 0; margin: 0; image-rendering: auto;
+}
+
+/* Rank Pokéball icon in the top bar. */
+.rank { display: inline-flex; align-items: center; gap: 6px; }
+.rank-icon { width: 18px; height: 18px; object-fit: contain; image-rendering: auto; }
+/* Sub-level in Roman numerals — set in a serif face so the numerals read more
+   "classical/rank-emblem" rather than blending into the sans-serif HUD chrome. */
+.rank-sub {
+  font-family: 'Georgia', 'Cambria', 'Times New Roman', serif;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+}
+
+.tooltip {
+  position: fixed; background: #2a3a4a; color: white; padding: 8px 12px; border-radius: 8px;
+  font-size: 12px; max-width: 280px; z-index: 1000; pointer-events: none; line-height: 1.4;
+}
+.tooltip .tname { font-weight: 700; margin-bottom: 4px; color: #a8d8f0; }
+
+/* Generic option cards (events, items, etc.) */
+/* auto-fill (not auto-fit) keeps empty tracks reserved when a card is removed —
+   so e.g. buying one item in the town shop doesn't make the remaining items
+   stretch out to fill the row. The adventure event grid overrides this with
+   its own auto-fit rule and is unaffected. */
+.choices { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 14px; }
+.card {
+  background: var(--panel-2); border: 2px solid var(--border); border-radius: var(--radius);
+  padding: 16px; cursor: pointer; transition: all 0.15s; text-align: center;
+}
+.card:hover { border-color: var(--accent); transform: translateY(-2px); }
+.card.disabled { opacity: 0.4; cursor: not-allowed; }
+.card .ctitle { font-size: 16px; font-weight: 700; margin-bottom: 8px; color: var(--accent-deep); }
+.card .csub { font-size: 12px; color: var(--ink-soft); }
+.card img { width: 80px; height: 80px; image-rendering: auto; margin: 8px 0; }
+
+/* Title screen — title at top, buttons centered horizontally near the bottom (side
+   by side: Ranked left, Single Player right), and an infinite-scrolling Pokémon
+   sprite carousel along the very bottom edge for vibe. */
+.start-screen {
+  position: relative;
+  text-align: center;
+  padding: 80px 20px 160px;            /* bottom padding leaves room above the carousel */
+  min-height: 80vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: space-between;
+}
+.start-screen h1 { font-size: 56px; color: var(--accent-deep); margin: 0; letter-spacing: -0.02em; }
+
+/* Player identity block — sits between the PokeMini title and the mode-buttons, gives
+   the player a quick read on their persistent state (name, rank, ELO) before they
+   click into a run. The "Change name" link sits as a small ghost button below. */
+.start-player-info {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+}
+.start-player-name {
+  font-size: 24px;
+  font-weight: 800;
+  color: var(--ink);
+  letter-spacing: 0.01em;
+}
+.start-player-rank {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 14px;
+  background: var(--panel-2);
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  font-size: 14px;
+  color: var(--ink-soft);
+}
+.start-rank-icon { width: 22px; height: 22px; object-fit: contain; }
+.start-rank-tier { font-weight: 700; color: var(--accent-deep); }
+.start-rank-elo  { font-weight: 700; color: var(--ink); margin-left: 4px; }
+.start-rank-elo::before { content: '•'; margin-right: 8px; color: var(--ink-soft); font-weight: 400; }
+.start-change-name {
+  font-size: 11px;
+  padding: 4px 10px;
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--ink-soft);
+  border-radius: 6px;
+  margin-top: 2px;
+  min-width: 0;
+}
+.start-change-name:hover:not(:disabled) {
+  background: var(--panel-2);
+  color: var(--accent-deep);
+  border-color: var(--accent);
+}
+
+/* Username setup / change-name screen — shown on first launch (no pm-name in
+   localStorage) before the title, plus reachable from the title's "Change name"
+   button. Same vertical-centered layout as the title. */
+.username-screen {
+  text-align: center;
+  padding: 60px 20px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 18px;
+}
+.username-screen h1 {
+  font-size: 40px;
+  color: var(--accent-deep);
+  margin: 0;
+  letter-spacing: -0.02em;
+}
+.username-subtitle {
+  font-size: 15px;
+  color: var(--ink-soft);
+  max-width: 360px;
+  line-height: 1.45;
+}
+.username-input {
+  width: min(320px, 90%);
+  padding: 14px 16px;
+  font-size: 18px;
+  font-weight: 700;
+  text-align: center;
+  border: 2px solid var(--border);
+  border-radius: 10px;
+  background: var(--panel);
+  color: var(--ink);
+  letter-spacing: 0.02em;
+  outline: none;
+}
+.username-input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(74,163,223,0.15);
+}
+/* Hint line under the input. Default state is a neutral light-gray rules summary;
+   .error state flips to a warm red to signal a validation failure. The text swaps
+   in place (same element, no layout shift) so the rules are always visible. */
+.username-hint {
+  font-size: 12px;
+  color: var(--ink-soft);
+  margin-top: -8px;
+  min-height: 16px;
+  letter-spacing: 0.02em;
+}
+.username-hint.error {
+  color: var(--warn);
+  font-weight: 600;
+}
+.username-actions {
+  display: flex;
+  gap: 12px;
+  margin-top: 6px;
+}
+.username-actions button {
+  font-size: 15px;
+  padding: 10px 24px;
+  min-width: 120px;
+}
+.start-screen .mode-buttons {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: center;
+  gap: 28px;
+  margin-top: auto;                    /* push buttons down inside the flex column */
+}
+.start-screen .mode-buttons button {
+  font-size: 18px;
+  padding: 18px 36px;
+  min-width: 220px;
+  font-weight: 700;
+}
+.start-carousel {
+  position: absolute;
+  bottom: 0; left: 0; right: 0;
+  height: 96px;
+  overflow: hidden;
+  display: flex; align-items: center;
+  pointer-events: none;
+  /* Soft fade-out on both edges so sprites don't appear/disappear with hard cuts. */
+  mask-image: linear-gradient(to right, transparent 0%, black 6%, black 94%, transparent 100%);
+  -webkit-mask-image: linear-gradient(to right, transparent 0%, black 6%, black 94%, transparent 100%);
+}
+.start-carousel-track {
+  display: flex;
+  gap: 14px;
+  width: max-content;
+  /* The track contains TWO copies of the sprite list back-to-back; the animation
+     scrolls left by 50% (one full copy) so the loop point lands on a duplicate frame
+     and the seam is invisible. 480s = a very slow, ambient parade. */
+  animation: carousel-scroll 480s linear infinite;
+}
+.start-carousel-track img {
+  width: 64px; height: 64px;
+  object-fit: contain;
+  image-rendering: auto;
+  flex-shrink: 0;
+  opacity: 0.72;
+  filter: drop-shadow(0 2px 4px rgba(0,0,0,0.18));
+}
+@keyframes carousel-scroll {
+  from { transform: translateX(0); }
+  to   { transform: translateX(-50%); }
+}
+
+/* Defeat screen — dark overlay, big red "DEFEAT" with a one-shot shake/glow on
+   entry. Distinct from the victory screen so a run loss lands with weight. */
+.defeat-screen {
+  text-align: center;
+  padding: 60px 20px 80px;
+  background: linear-gradient(180deg, rgba(20,8,12,0.04) 0%, rgba(60,15,25,0.10) 100%);
+  border-radius: var(--radius);
+  min-height: 60vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 24px;
+  animation: defeat-screen-in 600ms ease both;
+}
+.defeat-title {
+  font-size: 80px;
+  font-weight: 900;
+  letter-spacing: 0.12em;
+  color: #c12d2d;
+  text-shadow:
+    0 2px 0 #5a0e0e,
+    0 6px 14px rgba(193,45,45,0.45),
+    0 0 24px rgba(193,45,45,0.25);
+  animation: defeat-title-shake 700ms ease both;
+}
+.defeat-subtitle {
+  font-size: 17px;
+  color: var(--ink-soft);
+  margin-top: -8px;
+}
+.defeat-stats {
+  display: flex;
+  gap: 48px;
+  margin: 16px 0 8px;
+}
+.defeat-stat { display: flex; flex-direction: column; align-items: center; gap: 4px; }
+.defeat-stat-value { font-size: 56px; font-weight: 800; color: var(--ink); line-height: 1; }
+.defeat-stat-label { font-size: 12px; text-transform: uppercase; letter-spacing: 0.1em; color: var(--ink-soft); }
+.defeat-elo { font-size: 14px; color: var(--ink-soft); }
+.defeat-btn { margin-top: 16px; font-size: 17px; padding: 14px 32px; }
+
+@keyframes defeat-screen-in {
+  0%   { opacity: 0; }
+  100% { opacity: 1; }
+}
+/* Shake-and-grow entry for the big DEFEAT word — punches in over ~700ms. */
+@keyframes defeat-title-shake {
+  0%   { transform: scale(0.4)  rotate(-4deg); opacity: 0; }
+  35%  { transform: scale(1.18) rotate( 2deg); opacity: 1; }
+  50%  { transform: translateX(-8px) scale(1.1); }
+  60%  { transform: translateX( 8px) scale(1.1); }
+  72%  { transform: translateX(-5px) scale(1.05); }
+  85%  { transform: translateX( 3px) scale(1.02); }
+  100% { transform: translateX( 0)   scale(1);    }
+}
+
+/* Victory screen (run-complete + ranked) — large green "Victory!" word centered above
+   the shared ELO progress bar. Uses the same layout grammar as defeat-screen so both
+   end-of-run screens feel like part of the same family. */
+.result-screen {
+  text-align: center;
+  padding: 40px 20px 60px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 22px;
+  animation: defeat-screen-in 500ms ease both;
+}
+.result-screen .result-title {
+  font-size: 72px;
+  font-weight: 900;
+  letter-spacing: 0.06em;
+  color: #2d7fb8;
+  text-shadow:
+    0 2px 0 #134766,
+    0 6px 14px rgba(45,127,184,0.40),
+    0 0 24px rgba(45,127,184,0.20);
+}
+
+/* Shared ELO progress block — appears on both victory and defeat screens. */
+.result-elo-block {
+  width: min(440px, 92%);
+  display: flex; flex-direction: column; gap: 8px;
+}
+.result-elo-row {
+  display: flex; justify-content: space-between; align-items: baseline;
+}
+.result-elo-numbers .result-elo-value {
+  font-size: 28px; font-weight: 800; color: var(--ink);
+}
+.result-elo-delta {
+  font-size: 16px; font-weight: 800; letter-spacing: 0.04em;
+}
+.result-elo-delta.gain    { color: #3fb56a; }
+.result-elo-delta.loss    { color: #d97c4a; }
+.result-elo-delta.neutral { color: var(--ink-soft); }
+
+.result-elo-bar {
+  position: relative;
+  width: 100%; height: 14px;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  overflow: hidden;
+}
+.result-elo-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--accent), var(--accent-deep));
+  /* The width is set inline (old position) and then animated to data-target on the
+     next paint frame via requestAnimationFrame in endRun(). */
+  transition: width 900ms cubic-bezier(0.25, 0.46, 0.45, 0.94);
+}
+.result-elo-fill.loss { background: linear-gradient(90deg, #e08a5c, #d97c4a); }
+.result-elo-fill.neutral { background: linear-gradient(90deg, #aab4be, #8a96a3); }
+
+.result-elo-foot {
+  display: flex; justify-content: space-between;
+  font-size: 11px;
+  color: var(--ink-soft);
+  letter-spacing: 0.03em;
+}
+
+.result-elo-sub { font-size: 13px; color: var(--ink-soft); }
+
+/* Re-use the ELO block on the defeat screen — sized to fit. */
+.defeat-screen .result-elo-block { margin-top: 4px; }
+
+/* ─── Battle arena (vertical layout, compact) ─────────────────────────── */
+.battle-arena {
+  display: flex; flex-direction: column; gap: 2px; padding: 2px 0;
+  position: relative;             /* anchors absolutely-positioned particles */
+}
+/* Each side is wrapped so we can drop an arena-floor graphic underneath the slot grid. */
+.battle-side-wrap {
+  position: relative;
+  display: flex; justify-content: center; align-items: center;
+  width: 100%;
+  /* Reserves the visual room of the arena-floor so layout doesn't collapse around an absolute child. */
+  min-height: 260px;
+}
+.battle-side  {
+  display: grid; grid-template-columns: repeat(3, 124px); grid-template-rows: auto auto;
+  gap: 4px 6px; justify-content: center; width: 100%;
+  position: relative; z-index: 2;
+}
+/* Arena floor — a single 400 × 260 px graphic centered behind each side's slot grid.
+   The 3×2 slot grid is ~384 × 252 px, so 400 × 260 gives a few px of breathing room.
+   Both sides reuse the same player.png. Rendered at 80% opacity to soften it under the sprites. */
+.arena-floor {
+  position: absolute; left: 50%; top: 50%;
+  width: 400px; height: 260px;
+  transform: translate(-50%, -50%);
+  z-index: 1;
+  pointer-events: none;
+  background-image: url('assets/arena/player.png');
+  background-position: center; background-repeat: no-repeat; background-size: contain;
+  image-rendering: pixelated;
+  opacity: 0.4;
+}
+.battle-banner {
+  display: flex; justify-content: center; align-items: center; gap: 16px;
+  padding: 4px 12px; border-top: 1px dashed var(--border); border-bottom: 1px dashed var(--border);
+  min-height: 28px;
+}
+.battle-banner .turn-marker { font-size: 11px; color: var(--ink-soft); text-transform: uppercase; letter-spacing: 0.08em; font-weight: 700; }
+/* Victory / Defeat verdict — sits inline next to the battle title (left side of the
+   phase header) so it appears without displacing the arena layout below. */
+.phase-title .verdict {
+  margin-left: 12px; font-size: 18px; font-weight: 800;
+  color: var(--accent-deep); letter-spacing: 0.04em;
+}
+.phase-title .verdict.win  { color: var(--good); }
+.phase-title .verdict.lose { color: var(--warn); }
+.phase-title .verdict.draw { color: var(--ink-soft); }
+
+/* Battle control cluster — three states share the same header-right slot, exactly
+   one visible at a time: "Start Battle" (pre-battle) → speed bar (during) → "Continue"
+   (post-battle). The wrapper just centers whichever child isn't .hidden. */
+.battle-controls-bar { display: flex; align-items: center; gap: 4px; }
+
+/* Battle speed bar — three buttons (1×, 2×, 4×). The selected speed stays highlighted
+   via .speed-active until another is clicked. Sized to match the header's other inline
+   controls. */
+.battle-speed-bar { display: flex; gap: 4px; }
+.battle-speed-bar .speed-btn {
+  font-size: 13px; font-weight: 800; letter-spacing: 0.02em;
+  padding: 6px 12px; min-width: 44px; line-height: 1;
+  background: var(--panel); color: var(--accent-deep);
+  border: 2px solid var(--border); border-radius: 8px;
+  cursor: pointer; box-shadow: none;
+  transition: background 0.15s, color 0.15s, border-color 0.15s, transform 0.15s;
+}
+.battle-speed-bar .speed-btn:hover:not(.speed-active) { background: var(--panel-2); }
+.battle-speed-bar .speed-btn.speed-active {
+  background: var(--accent); color: white; border-color: var(--accent);
+}
+
+/* Start Battle + Continue share this style — same height/footprint as the speed bar
+   so swapping between the three control states doesn't shift the header layout. */
+.battle-control-btn {
+  font-size: 13px; font-weight: 800; letter-spacing: 0.02em;
+  padding: 6px 16px; min-width: 96px; line-height: 1;
+  background: var(--accent); color: white;
+  border: 2px solid var(--accent); border-radius: 8px;
+  cursor: pointer; box-shadow: none;
+  transition: background 0.15s, border-color 0.15s, transform 0.15s;
+}
+.battle-control-btn:hover:not(:disabled) {
+  background: var(--accent-deep); border-color: var(--accent-deep);
+}
+
+.battle-slot {
+  position: relative;
+  background: transparent; border: none; padding: 2px;
+  display: flex; flex-direction: column; align-items: center; gap: 1px;
+  min-height: 124px; cursor: pointer;
+  transition: transform 0.15s, filter 0.4s, opacity 0.4s;
+}
+.battle-slot.empty { opacity: 0; cursor: default; }
+.battle-slot:hover:not(.empty) { transform: translateY(-2px); }
+
+.battle-slot img {
+  width: 112px; height: 112px; image-rendering: auto;
+  position: relative; z-index: 1;
+  transition: transform 0.2s, filter 0.2s;
+}
+
+/* Platforms removed — sprites float on the clean panel background. */
+
+/* HP bar — 50% width, 8px tall (vertical thickness doubled from the original 4px),
+   segmented so beefier Pokémon carry a denser bar (one tick per ~10 HP via --segs).
+   Square corners, 2px black outline. Position in the slot is controlled by the flex
+   order in renderSlot — the bar sits directly above the sprite, so the margin here is
+   neutral. Tweak this to fine-tune the bar↔dmg-counter gap, not bar↔sprite distance. */
+.battle-slot .hpbar {
+  position: relative;
+  width: 50%; height: 8px; background: rgba(80, 100, 120, 0.22);
+  border-radius: 0; overflow: hidden; margin: 2px 0 1px;
+  border: 2px solid #000;
+}
+/* Per-unit "damage caused" tally — sum of all direct damage + healing this Pokémon contributed
+   during the battle. Shown as a discrete number directly under the HP bar, blank while zero. */
+.battle-slot .dmg-counter {
+  font-size: 11px; font-weight: 800; color: var(--ink-soft);
+  letter-spacing: 0.02em; text-align: center;
+  margin: 2px 0 0; min-height: 3px; line-height: 3px;
+}
+.battle-slot .hpbar-fill { height: 100%; background: var(--good); transition: width 0.4s ease-out; }
+.battle-slot .hpbar-fill.med { background: #f1c453; }
+.battle-slot .hpbar-fill.low { background: var(--warn); }
+/* Tick overlay — each "tile" is one segment wide; the right 1px of every tile is a dark line.
+   Sits on top of the fill so segment dividers stay visible over both filled and empty portions.
+   background-color MUST be transparent — the global ".hpbar > div" rule would otherwise paint it
+   solid green and cover up the fill underneath. */
+.battle-slot .hpbar-ticks {
+  position: absolute; inset: 0; pointer-events: none;
+  background-color: transparent;
+  background-image: linear-gradient(to right, transparent calc(100% - 1px), rgba(0,0,0,0.55) calc(100% - 1px));
+  background-size: calc(100% / var(--segs, 1)) 100%;
+  background-repeat: repeat-x;
+}
+
+/* status icon row — sits directly under the HP bar, above the sprite */
+.battle-slot .status-row { display: flex; gap: 4px; min-height: 18px; align-items: center; justify-content: center; margin-top: 2px; }
+/* Pill (not circle) so the stack count can sit next to the letter — "4×B", "3×P", "2×S". */
+.battle-slot .status-icon {
+  min-width: 26px; height: 18px; padding: 0 5px;
+  border-radius: 10px; font-size: 10px;
+  display: inline-flex; align-items: center; justify-content: center;
+  font-weight: 900; color: white; letter-spacing: 0.02em;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.35), inset 0 1px 1px rgba(255,255,255,0.4);
+  text-shadow: 0 1px 1px rgba(0,0,0,0.4);
+}
+.battle-slot .status-icon.burn   { background: radial-gradient(circle at 35% 30%, #ff8a3a, #c84032); }
+.battle-slot .status-icon.poison { background: radial-gradient(circle at 35% 30%, #b860c8, #6a2a8a); }
+.battle-slot .status-icon.stun   { background: radial-gradient(circle at 35% 30%, #ffe040, #c9a020); color: #4a3a10; text-shadow: 0 1px 1px rgba(255,255,255,0.4); }
+
+/* Damage / heal popups — fixed-positioned so they float above every other UI layer. */
+.battle-popup {
+  position: fixed;
+  font-weight: 800; font-size: 16px; color: #e02020; pointer-events: none;
+  /* White outline + soft glow — red reads cleanly against any background. */
+  text-shadow:
+    -1.5px -1.5px 0 rgba(255,255,255,0.95),
+     1.5px -1.5px 0 rgba(255,255,255,0.95),
+    -1.5px  1.5px 0 rgba(255,255,255,0.95),
+     1.5px  1.5px 0 rgba(255,255,255,0.95),
+     0 0 6px rgba(255,255,255,0.6);
+  animation: popup 1.8s ease-out forwards; z-index: 9999;
+  white-space: nowrap;
+}
+.battle-popup.heal { color: #2f9b3a; }
+.battle-popup.crit { font-size: 22px; color: #b81616; }
+.battle-popup.miss { color: var(--ink-soft); font-size: 14px; font-style: italic; }
+/* Type-effectiveness modifiers — populated by the hit handler based on `tmult`.
+   .super: 2px larger than base, yellow outline replaces the white outline.
+   .resist: 2px smaller, muted grey color.
+   These can stack with .crit (which only changes color/base-size); .super/.resist
+   set their own font-size which overrides the base, and .crit + .super wins on size
+   declaration order — kept .super after .crit so a super-effective crit reads big. */
+.battle-popup.super {
+  font-size: 18px;
+  text-shadow:
+    -1.5px -1.5px 0 #f8c800,
+     1.5px -1.5px 0 #f8c800,
+    -1.5px  1.5px 0 #f8c800,
+     1.5px  1.5px 0 #f8c800,
+     0 0 8px rgba(248, 200, 0, 0.7);
+}
+.battle-popup.resist { font-size: 14px; color: var(--ink-soft); }
+
+/* Floating notice that pops above a team slot when a Pokémon levels up or evolves.
+   Reuses the @keyframes popup animation defined below so it shares the float-up-and-fade
+   motion with the battle popups. Positioned via inline left/top (set in flushTeamPopups). */
+.team-popup {
+  position: fixed;
+  font-weight: 900; font-size: 16px; letter-spacing: 0.04em;
+  color: var(--accent-deep); pointer-events: none;
+  text-shadow:
+    -1.5px -1.5px 0 rgba(255,255,255,0.95),
+     1.5px -1.5px 0 rgba(255,255,255,0.95),
+    -1.5px  1.5px 0 rgba(255,255,255,0.95),
+     1.5px  1.5px 0 rgba(255,255,255,0.95),
+     0 0 6px rgba(255,255,255,0.7);
+  animation: popup 1.9s ease-out forwards;
+  z-index: 9998;
+  white-space: nowrap;
+}
+.team-popup.level  { color: var(--accent-deep); }
+.team-popup.evolve { color: var(--good); font-size: 18px; letter-spacing: 0.06em; }
+
+@keyframes popup {
+  0%   { opacity: 0; transform: translate(-50%, 14px) scale(0.7); }
+  8%   { opacity: 1; transform: translate(-50%, -4px) scale(1.15); }
+  18%  { opacity: 1; transform: translate(-50%, -12px) scale(1); }
+  70%  { opacity: 1; transform: translate(-50%, -36px) scale(1); }
+  100% { opacity: 0; transform: translate(-50%, -56px) scale(0.95); }
+}
+
+/* Ability shout — yellow ribbon above the sprite */
+.battle-slot .ability-shout {
+  position: absolute; left: 50%; bottom: 78%;
+  background: rgba(248, 208, 48, 0.96); color: #4a3a10;
+  font-weight: 800; font-size: 11px; padding: 3px 9px; border-radius: 12px;
+  white-space: nowrap; text-transform: uppercase; letter-spacing: 0.05em;
+  pointer-events: none; z-index: 6; box-shadow: 0 2px 6px rgba(0,0,0,0.2);
+  animation: shout 1.3s ease-out forwards;
+}
+@keyframes shout {
+  0%   { opacity: 0; transform: translate(-50%, 8px) scale(0.6); }
+  20%  { opacity: 1; transform: translate(-50%, -2px) scale(1.15); }
+  70%  { opacity: 1; transform: translate(-50%, -10px) scale(1); }
+  100% { opacity: 0; transform: translate(-50%, -22px) scale(1); }
+}
+
+/* Attack pulse / target shake */
+@keyframes pulse-atk {
+  0%, 100% { transform: scale(1); filter: brightness(1); }
+  50%      { transform: scale(1.15); filter: brightness(1.4) drop-shadow(0 0 6px var(--accent)); }
+}
+@keyframes shake-hit {
+  0%, 100% { transform: translateX(0); }
+  20% { transform: translateX(-6px); }
+  40% { transform: translateX(5px); }
+  60% { transform: translateX(-4px); }
+  80% { transform: translateX(3px); }
+}
+/* Sprite-tint animations (replace the old slot-background flashes). */
+@keyframes hit-sprite {
+  0%, 100% { filter: none; }
+  25%      { filter: brightness(0.4) sepia(1) saturate(20) hue-rotate(-60deg) brightness(1.6) drop-shadow(0 0 6px rgba(255,40,40,0.7)); }
+}
+@keyframes burn-sprite {
+  0%, 100% { filter: none; }
+  50%      { filter: brightness(0.55) sepia(1) saturate(8) hue-rotate(-25deg) brightness(1.3); }
+}
+@keyframes poison-sprite {
+  0%, 100% { filter: none; }
+  50%      { filter: brightness(0.5) sepia(1) saturate(8) hue-rotate(230deg); }
+}
+@keyframes heal-sprite {
+  0%, 100% { filter: none; }
+  50%      { filter: brightness(1.3) drop-shadow(0 0 10px rgba(106,184,95,0.85)); }
+}
+/* Faint — knock-back, tumble forward a short distance, then disappear completely. */
+@keyframes faint-fade {
+  0%   { opacity: 1;    filter: brightness(1);   transform: translateY(0)    rotate(0)     scale(1); }
+  18%  { opacity: 1;    filter: brightness(1.7); transform: translateY(-12px) rotate(-10deg) scale(1.08); }
+  35%  { opacity: 1;    filter: brightness(0.9); transform: translateY(-4px)  rotate(8deg)  scale(1.04); }
+  75%  { opacity: 0.55; filter: brightness(0.7); transform: translateY(16px)  rotate(-65deg) scale(0.85); }
+  100% { opacity: 0;    filter: brightness(0.6); transform: translateY(28px)  rotate(-88deg) scale(0.7); }
+}
+@keyframes revive-glow {
+  0%, 100% { filter: none; }
+  50%      { filter: brightness(1.4) drop-shadow(0 0 14px rgba(106,184,95,0.8)); }
+}
+
+.battle-slot.is-attacking img { animation: pulse-atk 0.35s ease-out; }
+.battle-slot.is-hit       img { animation: shake-hit 0.4s ease-out, hit-sprite 0.4s ease-out; }
+.battle-slot.is-burning   img { animation: burn-sprite 0.5s ease-out; }
+.battle-slot.is-poisoned  img { animation: poison-sprite 0.5s ease-out; }
+.battle-slot.is-healed    img { animation: heal-sprite 0.7s ease-out; }
+.battle-slot.is-reviving  img { animation: revive-glow 0.7s ease-out; }
+.battle-slot.is-fainting img  { animation: faint-fade 1.1s cubic-bezier(0.35, 0.0, 0.55, 1.0) forwards; transform-origin: 50% 80%; }
+/* Defeated Pokémon — fully gone, but the slot still reserves grid space so the layout doesn't shift. */
+.battle-slot.fainted          { visibility: hidden; }
+
+.battle-controls {
+  display: flex; justify-content: center; gap: 8px; padding: 10px 0 0; flex-wrap: wrap;
+}
+
+/* ─── Attack particle ─────────────────────────────────────────────────── */
+.particle {
+  position: absolute; width: 22px; height: 22px; border-radius: 50%;
+  margin-left: -11px; margin-top: -11px;
+  pointer-events: none; z-index: 8;
+  background: var(--accent);
+  box-shadow: 0 0 14px 5px rgba(74,163,223,0.7), inset 0 0 4px rgba(255,255,255,0.7);
+  transform: translate(0, 0) scale(1);
+  will-change: transform;
+}
+.particle.type-normal   { background: #b8b89a; box-shadow: 0 0 14px 5px rgba(168,168,120,0.8), inset 0 0 4px rgba(255,255,255,0.7); }
+.particle.type-fire     { background: #ff8a3a; box-shadow: 0 0 18px 7px rgba(240,128,48,0.85), inset 0 0 5px rgba(255,255,255,0.8); }
+.particle.type-water    { background: #80a8ff; box-shadow: 0 0 16px 6px rgba(104,144,240,0.8), inset 0 0 4px rgba(255,255,255,0.8); }
+.particle.type-electric { background: #ffe040; box-shadow: 0 0 18px 7px rgba(248,208,48,0.95), inset 0 0 5px rgba(255,255,255,0.9); }
+.particle.type-grass    { background: #8edc60; box-shadow: 0 0 16px 6px rgba(120,200,80,0.85), inset 0 0 4px rgba(255,255,255,0.7); }
+.particle.type-ice      { background: #b0e8e8; box-shadow: 0 0 16px 6px rgba(152,216,216,0.85), inset 0 0 4px rgba(255,255,255,0.8); }
+.particle.type-fighting { background: #d04030; box-shadow: 0 0 16px 6px rgba(192,48,40,0.85), inset 0 0 4px rgba(255,255,255,0.6); }
+.particle.type-poison   { background: #b850b8; box-shadow: 0 0 18px 7px rgba(160,64,160,0.85), inset 0 0 4px rgba(255,255,255,0.6); }
+.particle.type-ground   { background: #ecc878; box-shadow: 0 0 14px 5px rgba(224,192,104,0.85), inset 0 0 4px rgba(255,255,255,0.7); }
+.particle.type-flying   { background: #b8a0ff; box-shadow: 0 0 14px 5px rgba(168,144,240,0.85), inset 0 0 4px rgba(255,255,255,0.8); }
+.particle.type-psychic  { background: #ff6898; box-shadow: 0 0 18px 7px rgba(248,88,136,0.85), inset 0 0 4px rgba(255,255,255,0.7); }
+.particle.type-bug      { background: #b8c830; box-shadow: 0 0 14px 5px rgba(168,184,32,0.85), inset 0 0 4px rgba(255,255,255,0.6); }
+.particle.type-rock     { background: #c8b048; box-shadow: 0 0 14px 5px rgba(184,160,56,0.85), inset 0 0 4px rgba(255,255,255,0.6); }
+.particle.type-ghost    { background: #8068a8; box-shadow: 0 0 16px 6px rgba(112,88,152,0.85), inset 0 0 4px rgba(255,255,255,0.6); }
+.particle.type-dragon   { background: #8048ff; box-shadow: 0 0 18px 7px rgba(112,56,248,0.9), inset 0 0 4px rgba(255,255,255,0.7); }
+
+/* impact flash at the moment a particle hits */
+@keyframes impact-burst {
+  0%   { opacity: 0; transform: translate(-50%,-50%) scale(0.4); }
+  40%  { opacity: 1; transform: translate(-50%,-50%) scale(1.6); }
+  100% { opacity: 0; transform: translate(-50%,-50%) scale(2.2); }
+}
+.impact-burst {
+  position: absolute; top: 45%; left: 50%; width: 36px; height: 36px;
+  border-radius: 50%; pointer-events: none; z-index: 7;
+  background: radial-gradient(circle, rgba(255,255,255,0.9) 0%, rgba(255,255,255,0) 70%);
+  animation: impact-burst 0.4s ease-out forwards;
+}
+
+/* Rich tooltip (full Pokémon card popover) */
+.tooltip.rich {
+  background: var(--panel); color: var(--ink); border: 2px solid var(--accent);
+  padding: 6px; max-width: 360px; box-shadow: 0 10px 24px rgba(0,0,0,0.2);
+}
+.tooltip.rich .slot {
+  width: 320px; cursor: default; min-height: auto; background: var(--panel-2);
+}
+.tooltip.rich .slot:hover { transform: none; }
+
+.adventure-steps { display: flex; justify-content: center; gap: 8px; margin-bottom: 20px; }
+.adventure-steps .step { width: 32px; height: 32px; border-radius: 50%; background: var(--panel-2);
+  border: 2px solid var(--border); display: flex; align-items: center; justify-content: center;
+  font-size: 12px; font-weight: 700; color: var(--ink-soft);
+}
+.adventure-steps .step.done { background: var(--good); color: white; border-color: var(--good); }
+.adventure-steps .step.current { background: var(--accent); color: white; border-color: var(--accent); }
+
+.shop-money { font-size: 18px; font-weight: 700; color: var(--accent-deep); margin-bottom: 16px; }
+.cost { color: var(--accent-deep); font-weight: 700; }
+
+.message { text-align: center; padding: 12px; color: var(--ink-soft); font-style: italic; }
+
+@media (max-width: 700px) {
+  #bottombar { flex-direction: column; }
+  .items { width: auto; flex-direction: row; }
+  .item-slot { min-height: 50px; }
+  .battle-stage { grid-template-columns: 1fr; }
+  .start-screen .mode-buttons { flex-direction: column; align-items: stretch; }
+}

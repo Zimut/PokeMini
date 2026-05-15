@@ -1,0 +1,12 @@
+{
+  "name": "pokemini",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "client": "node serve.js",
+    "server": "cd server && npm start",
+    "server:install": "cd server && npm install",
+    "dev": "node serve.js"
+  }
+}
