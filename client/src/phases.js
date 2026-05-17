@@ -1,5 +1,5 @@
 // Game phases: starter → adventure → battle → town → repeat.
-import { SPECIES, ITEMS, BERRIES, ZONES, GYM_LEADERS, TRAINERS, RUN, rankFromElo } from './data.js';
+import { SPECIES, ITEMS, BERRIES, ZONES, GYM_LEADERS, TRAINERS, RUN, rankFromElo, RANK_BAND } from './data.js';
 import { newRng, buildTeam, simulate, actualStats } from './engine.js';
 import * as S from './state.js';
 import { setPhase, phaseHeader, renderTopbar, renderTeam, renderItems, attachTooltip, SPRITE_URL, abilityTooltip, abilityName, itemTooltip, pokemonCardInnerHTML, itemIcon, TRAINER_SPRITE_URL, setTopbarStep, ITEM_ICON_URL, resetTopbarTrack, rankIcon } from './ui.js';
@@ -467,17 +467,15 @@ export function showTitle() {
   const rankSub = ROMAN[r.sub] || String(r.sub);
   // Static rank progress bar — same visual as the end-of-run screen's ELO block but
   // without the delta indicator (no battle just happened). Shows the player's progress
-  // within their current 200-point sub-rank band. Reuses .result-elo-* CSS classes;
-  // .menu-rank-progress adds spacing / sizing tweaks for the title context.
-  const subBandPct = Math.max(0, Math.min(100, ((elo % 200) / 200) * 100));
+  // within their current RANK_BAND sub-rank band. The progress number ("150 / 500")
+  // is overlaid INSIDE the bar via .result-elo-bar-label.
+  const subBandPos = elo % RANK_BAND;
+  const subBandPct = Math.max(0, Math.min(100, (subBandPos / RANK_BAND) * 100));
   const rankBarHtml = `
     <div class="result-elo-block menu-rank-progress">
       <div class="result-elo-bar">
         <div class="result-elo-fill neutral" style="width:${subBandPct}%"></div>
-      </div>
-      <div class="result-elo-foot">
-        <span>${t('result.currentRankTier')}</span>
-        <span class="result-elo-next">${t('result.subRank', elo % 200)}</span>
+        <div class="result-elo-bar-label">${subBandPos} / ${RANK_BAND}</div>
       </div>
     </div>
   `;
@@ -2487,13 +2485,14 @@ function endRun(result) {
   saveSnapshot(state, 'runEnd');
   import('./api.js').then(({ api }) => api.endRun?.(state, result).catch(()=>{}));
 
-  // Shared ELO progress bar — used by both victory and defeat. Each "sub-rank" spans
-  // 200 ELO, so the bar shows progress within that 200-point band; tier name + roman
-  // numeral mirror the topbar's ranking display. Old position renders first, then the
-  // bar slides to the new position on the next paint frame for a smooth fill/empty.
+  // Shared ELO progress bar — used by both victory and defeat. Each sub-rank spans
+  // RANK_BAND ELO, so the bar shows progress within that band. Old position renders
+  // first; the bar slides to the new position on the next paint frame for a smooth
+  // fill/empty. The progress number sits INSIDE the bar (e.g. "150 / 500").
   const renderEloBlock = (oldEloVal, newEloVal) => {
-    const oldPct = Math.max(0, Math.min(100, ((oldEloVal % 200) / 200) * 100));
-    const newPct = Math.max(0, Math.min(100, ((newEloVal % 200) / 200) * 100));
+    const oldPos = oldEloVal % RANK_BAND;
+    const oldPct = Math.max(0, Math.min(100, (oldPos / RANK_BAND) * 100));
+    const newPct = Math.max(0, Math.min(100, ((newEloVal % RANK_BAND) / RANK_BAND) * 100));
     const delta = newEloVal - oldEloVal;
     const deltaCls = delta > 0 ? 'gain' : delta < 0 ? 'loss' : 'neutral';
     const deltaTxt = delta > 0 ? `+${delta}` : (delta < 0 ? `${delta}` : '±0');
@@ -2505,8 +2504,8 @@ function endRun(result) {
         </div>
         <div class="result-elo-bar">
           <div class="result-elo-fill ${deltaCls}" style="width:${oldPct}%" data-target="${newPct}"></div>
+          <div class="result-elo-bar-label">${oldPos} / ${RANK_BAND}</div>
         </div>
-        <div class="result-elo-foot"><span>${t('result.currentRankTier')}</span><span class="result-elo-next">${t('result.subRank', oldEloVal % 200)}</span></div>
       </div>
     `;
   };

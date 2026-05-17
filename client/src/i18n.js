@@ -189,7 +189,7 @@ const en = {
   'result.badgesEarned': 'badges earned',
   'result.zoneReached':  'zone reached',
   'result.singlePlayerNoElo': 'Singleplayer — no ELO change',
-  'result.subRank': (cur) => `${cur}/200 to next sub-rank`,
+  'result.subRank': (cur) => `${cur}/500 to next sub-rank`,
   'result.currentRankTier': 'Current rank tier',
   'result.backToTitle': 'Back to title',
 
@@ -448,7 +448,7 @@ const ptBR = {
   'result.badgesEarned': 'insígnias',
   'result.zoneReached':  'zona alcançada',
   'result.singlePlayerNoElo': 'Um Jogador — sem mudança de ELO',
-  'result.subRank': (cur) => `${cur}/200 até a próxima sub-rank`,
+  'result.subRank': (cur) => `${cur}/500 até a próxima sub-rank`,
   'result.currentRankTier': 'Tier atual',
   'result.backToTitle': 'Voltar ao título',
 

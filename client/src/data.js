@@ -393,9 +393,11 @@ export const RUN = {
 };
 
 // ─── Rank tiers ──────────────────────────────────────────────────────────
+// 4 tiers × 4 sub-ranks = 16 ranks. RANK_BAND ELO points span one sub-rank, so
+// the climb from Poké I to Master IV is 16 × RANK_BAND ELO total.
 export const RANKS = ['Poké', 'Great', 'Ultra', 'Master'];
+export const RANK_BAND = 500;
 export function rankFromElo(elo) {
-  // 16 ranks total: 0–199 = Poké 1, 200–399 = Poké 2, ..., 3000+ = Master 4
-  const i = Math.min(15, Math.max(0, Math.floor(elo / 200)));
+  const i = Math.min(15, Math.max(0, Math.floor(elo / RANK_BAND)));
   return { tier: RANKS[Math.floor(i / 4)], sub: (i % 4) + 1 };
 }

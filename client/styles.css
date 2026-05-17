@@ -1536,10 +1536,10 @@ button.primary:hover { background: var(--accent-deep); border-color: var(--accen
 
 .result-elo-bar {
   position: relative;
-  width: 100%; height: 14px;
+  width: 100%; height: 20px;
   background: var(--panel-2);
   border: 1px solid var(--border);
-  border-radius: 7px;
+  border-radius: 10px;
   overflow: hidden;
 }
 .result-elo-fill {
@@ -1551,12 +1551,18 @@ button.primary:hover { background: var(--accent-deep); border-color: var(--accen
 }
 .result-elo-fill.loss { background: linear-gradient(90deg, #e08a5c, #d97c4a); }
 .result-elo-fill.neutral { background: linear-gradient(90deg, #aab4be, #8a96a3); }
-
-.result-elo-foot {
-  display: flex; justify-content: space-between;
-  font-size: 11px;
-  color: var(--ink-soft);
-  letter-spacing: 0.03em;
+/* Progress number rendered over the bar — "150 / 500" centered. Dark text + soft
+   white halo keeps it readable on both the empty background and the colored fill. */
+.result-elo-bar-label {
+  position: absolute; inset: 0;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 12px; font-weight: 700; line-height: 1;
+  color: var(--ink);
+  text-shadow:
+    0 0 3px rgba(255, 255, 255, 0.95),
+    0 0 6px rgba(255, 255, 255, 0.6);
+  pointer-events: none;
+  letter-spacing: 0.02em;
 }
 
 .result-elo-sub { font-size: 13px; color: var(--ink-soft); }
