@@ -59,6 +59,13 @@ export const queries = {
     ORDER BY created_at DESC LIMIT 1`),
   pruneSnapshots: db.prepare(`DELETE FROM snapshots WHERE created_at < ?`),
 
+  // Stats — count of distinct players who hit any authenticated endpoint in the
+  // recent window. last_seen is bumped by touchPlayerSeen (every verifyPlayer)
+  // and updatePlayerElo, so it tracks real activity.
+  countActivePlayersSince: db.prepare(
+    `SELECT COUNT(*) AS n FROM players WHERE last_seen >= ?`),
+  countTotalPlayers: db.prepare(`SELECT COUNT(*) AS n FROM players`),
+
   // Per-player snapshot cap — count + delete-oldest to keep one player from spamming
   // the matchmaking pool. Indexed by player_name (case-insensitive).
   countSnapshotsForPlayer: db.prepare(

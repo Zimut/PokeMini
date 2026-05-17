@@ -5,6 +5,7 @@ import { actualStats } from './engine.js';
 export function newRun({ mode = 'singleplayer', playerName = 'Player', elo = 0, seed = Date.now() } = {}) {
   return {
     mode, playerName, elo, seed,
+    formatVersion: RUN.saveFormatVersion,
     zone: 1,
     badges: 0,
     strikes: RUN.startingStrikes,
@@ -18,11 +19,13 @@ export function newRun({ mode = 'singleplayer', playerName = 'Player', elo = 0, 
     // ─── Resume bookkeeping ──────────────────────────────────────────────
     // `phase` is the screen the player should land on after a page refresh.
     // `advStep` is the current adventure step (was a module-level in phases.js).
-    // `pendingEvents` caches the rolled event pair for the current advStep so
-    // refreshing during an adventure choice doesn't re-roll the cards.
+    // `pendingStep` caches the data rolled for the current advStep (the two wild
+    // candidates / two trainers / two special-event picks) so a refresh during
+    // a choice doesn't re-roll the cards. Shape differs by step kind — the
+    // step renderer owns the schema and is responsible for ignoring stale shapes.
     phase: 'starterPick',
     advStep: 0,
-    pendingEvents: null,
+    pendingStep: null,
     seenTrainers: [],          // trainer names already rolled this zone; reset on zone change
   };
 }
@@ -48,9 +51,16 @@ export function loadRun() {
     const s = JSON.parse(raw);
     // Sanity check — discard obviously malformed saves rather than crashing the app.
     if (!s || typeof s !== 'object' || !s.mode || !s.team) return null;
+    // Save-format gate: legacy runs from before the adventure rework (or any future
+    // bump) get wiped on load. The old `pendingEvents` quad shape and the 5-step
+    // advStep range would crash or misrender against the new step-kind dispatch.
+    if ((s.formatVersion | 0) < (RUN.saveFormatVersion | 0)) {
+      try { localStorage.removeItem(STORAGE_KEY); } catch {}
+      return null;
+    }
     // Migration: clear any item slots that reference items no longer in the registry
-    // (e.g. retired Repel). Keeps an old in-flight save from hauling around a slot it
-    // can't actually use.
+    // (e.g. retired Repel / Revive). Keeps an old in-flight save from hauling around
+    // a slot it can't actually use.
     if (Array.isArray(s.items)) {
       for (let i = 0; i < s.items.length; i++) {
         const it = s.items[i];

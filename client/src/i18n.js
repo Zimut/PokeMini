@@ -53,9 +53,9 @@ const en = {
   'event.lostStash.title': 'Lost Stash',
   'event.lostStash.desc':  'Pick one of three random items.',
   'event.wildHorde.title': 'Wild Horde',
-  'event.wildHorde.desc':  'Fight 6 of the same Pokémon for +3 team levels.',
-  'event.wildHorde.intro': (name) => `Six ${name} have appeared. Defeat them for +3 team levels.`,
-  'event.wildHorde.descSpecific': (name) => `Six ${name} — defeat them for +3 team levels.`,
+  'event.wildHorde.desc':  'Fight 6 of the same Pokémon for +1 team level.',
+  'event.wildHorde.intro': (name) => `Six ${name} have appeared. Defeat them for +1 team level.`,
+  'event.wildHorde.descSpecific': (name) => `Six ${name} — defeat them for +1 team level.`,
 
   // ─── Adventure card actions ──────────────────────────────────────────
   'adventure.repelActive': 'Repel active',
@@ -68,6 +68,30 @@ const en = {
   'wild.catch':   'Catch',
   'wild.appeared': 'Wild Pokémon Appeared!',
   'wild.crosses': (name) => `A wild ${name} crosses your path.`,
+
+  // ─── Capture step (adventure step kind A) ────────────────────────────
+  'capture.title':       'Capture a Pokémon',
+  'capture.subtitle':    'Pick one of the wild Pokémon below to add to your team, or skip for two small berries.',
+  'capture.pick':        'Catch',
+  'capture.skip':        'Pick small berries',
+  'capture.skipReward':  '+2 small berries',
+  'capture.skipNoSlots': 'No item slots free.',
+  'capture.fullTeamMsg': (gold) => `Team full — sold for $${gold}.`,
+  'capture.lureBtn':     'Lure (reroll both)',
+
+  // ─── Trainer step (adventure step kind B) ────────────────────────────
+  'trainer.title':       'Trainer Battle',
+  'trainer.subtitle':    'Pick a trainer to challenge, or skip for two small berries.',
+  'trainer.normal.title':   'Normal Trainer',
+  'trainer.normal.subtitle':(lvl) => `Reward: +${lvl} team levels on win.`,
+  'trainer.hard.title':     'Hard Trainer',
+  'trainer.hard.subtitle':  (lvl, extraPkmn, lvlBump) => `+${extraPkmn} Pokémon, +${lvlBump} level each. Reward: +${lvl} team levels on win.`,
+  'trainer.skip':        'Pick small berries',
+  'trainer.skipReward':  '+2 small berries',
+
+  // ─── Special step (adventure step kind C) ────────────────────────────
+  'special.title':    'Special Event',
+  'special.subtitle': 'Pick one of the two special events below.',
 
   // ─── Berry gathering ──────────────────────────────────────────────────
   'berry.fullSlots': 'Item slots are full — skipping.',
@@ -189,7 +213,7 @@ const en = {
   'item.tm.desc':            'Reroll the secondary type of a Pokémon. Mono → adds; dual → rerolls.',
   'item.hm.desc':            "Reroll the Pokémon's ability (same evolutionary tier).",
   'item.lure.desc':          'During Wild Encounter: swap to a random Pokémon.',
-  'item.spiritPendant.desc': 'Release a Pokémon; both adjacent team members gain 10% of its highest stat permanently.',
+  'item.spiritPendant.desc': 'Release a Pokémon; both adjacent team members gain +1 level.',
 
   // ─── Berry names ─────────────────────────────────────────────────────
   'berry.oran.name':       'Oran Berry',
@@ -231,6 +255,12 @@ const en = {
   'popup.evolved':   'EVOLVED!',
   'popup.levels':    (n) => `+${n} LVL`,
   'popup.statBonus': (n, stat) => `+${n} ${(stat + '').toUpperCase()}`,
+
+  // ─── Server status pill (top-left) ──────────────────────────────────
+  'status.online':       (n) => n === 1 ? `Online · 1 player` : `Online · ${n} players`,
+  'status.offline':      'Offline',
+  'status.titleOnline':  (n) => `Server online — ${n} player${n === 1 ? '' : 's'} active in the last 5 minutes.`,
+  'status.titleOffline': 'Server unreachable — running in local-only mode.',
 };
 
 const ptBR = {
@@ -279,9 +309,9 @@ const ptBR = {
   'event.lostStash.title': 'Tesouro Perdido',
   'event.lostStash.desc':  'Escolha um de três itens aleatórios.',
   'event.wildHorde.title': 'Horda Selvagem',
-  'event.wildHorde.desc':  'Lute contra 6 do mesmo Pokémon por +3 níveis de time.',
-  'event.wildHorde.intro': (name) => `Seis ${name} apareceram. Derrote-os por +3 níveis de time.`,
-  'event.wildHorde.descSpecific': (name) => `Seis ${name} — derrote-os por +3 níveis de time.`,
+  'event.wildHorde.desc':  'Lute contra 6 do mesmo Pokémon por +1 nível de time.',
+  'event.wildHorde.intro': (name) => `Seis ${name} apareceram. Derrote-os por +1 nível de time.`,
+  'event.wildHorde.descSpecific': (name) => `Seis ${name} — derrote-os por +1 nível de time.`,
 
   // ─── Adventure card actions ──────────────────────────────────────────
   'adventure.repelActive': 'Repelente ativo',
@@ -294,6 +324,30 @@ const ptBR = {
   'wild.catch':   'Capturar',
   'wild.appeared': 'Um Pokémon Selvagem Apareceu!',
   'wild.crosses': (name) => `Um ${name} selvagem cruza seu caminho.`,
+
+  // ─── Capture step (adventure step kind A) ────────────────────────────
+  'capture.title':       'Capturar um Pokémon',
+  'capture.subtitle':    'Escolha um dos Pokémon selvagens abaixo para juntar-se ao seu time, ou pegue duas frutas pequenas.',
+  'capture.pick':        'Capturar',
+  'capture.skip':        'Pegar frutas pequenas',
+  'capture.skipReward':  '+2 frutas pequenas',
+  'capture.skipNoSlots': 'Sem espaço para itens.',
+  'capture.fullTeamMsg': (gold) => `Time cheio — vendido por $${gold}.`,
+  'capture.lureBtn':     'Isca (re-sortear ambos)',
+
+  // ─── Trainer step (adventure step kind B) ────────────────────────────
+  'trainer.title':       'Batalha de Treinador',
+  'trainer.subtitle':    'Escolha um treinador para desafiar, ou pegue duas frutas pequenas.',
+  'trainer.normal.title':   'Treinador Normal',
+  'trainer.normal.subtitle':(lvl) => `Recompensa: +${lvl} níveis ao time na vitória.`,
+  'trainer.hard.title':     'Treinador Difícil',
+  'trainer.hard.subtitle':  (lvl, extraPkmn, lvlBump) => `+${extraPkmn} Pokémon, +${lvlBump} nível cada. Recompensa: +${lvl} níveis ao time na vitória.`,
+  'trainer.skip':        'Pegar frutas pequenas',
+  'trainer.skipReward':  '+2 frutas pequenas',
+
+  // ─── Special step (adventure step kind C) ────────────────────────────
+  'special.title':    'Evento Especial',
+  'special.subtitle': 'Escolha um dos dois eventos especiais abaixo.',
 
   // ─── Berry gathering ──────────────────────────────────────────────────
   'berry.fullSlots': 'Slots de itens cheios — pulando.',
@@ -415,7 +469,7 @@ const ptBR = {
   'item.tm.desc':            'Re-sorteia o tipo secundário do Pokémon. Mono → adiciona; dual → troca.',
   'item.hm.desc':            'Re-sorteia a habilidade do Pokémon (mesma fase evolutiva).',
   'item.lure.desc':          'Durante um Encontro Selvagem: troca por um Pokémon aleatório.',
-  'item.spiritPendant.desc': 'Libera um Pokémon; ambos os aliados adjacentes ganham 10% do maior stat dele permanentemente.',
+  'item.spiritPendant.desc': 'Libera um Pokémon; ambos os aliados adjacentes ganham +1 nível.',
 
   // ─── Berry names ─────────────────────────────────────────────────────
   'berry.oran.name':       'Fruta Oran',
@@ -457,6 +511,12 @@ const ptBR = {
   'popup.evolved':   'EVOLUIU!',
   'popup.levels':    (n) => `+${n} NVL`,
   'popup.statBonus': (n, stat) => `+${n} ${(stat + '').toUpperCase()}`,
+
+  // ─── Server status pill (top-left) ──────────────────────────────────
+  'status.online':       (n) => n === 1 ? `Online · 1 jogador` : `Online · ${n} jogadores`,
+  'status.offline':      'Offline',
+  'status.titleOnline':  (n) => `Servidor online — ${n} jogador${n === 1 ? '' : 'es'} ativo${n === 1 ? '' : 's'} nos últimos 5 minutos.`,
+  'status.titleOffline': 'Servidor inacessível — rodando em modo local.',
 
   // ─── Ability names (PT-BR) ──────────────────────────────────────────
   'ability.overgrowth.name':   'Crescimento',

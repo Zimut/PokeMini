@@ -258,6 +258,47 @@ body { background: var(--bg); color: var(--ink); }
   filter: saturate(1);
 }
 
+/* Server status pill — fixed top-left corner, mirrors the Options button on the
+   right. Always visible (no .hidden toggle) so players always see whether their
+   actions will sync. Three states managed via class swap: status-online (green),
+   status-offline (red), status-unknown (grey, while the first poll is pending). */
+.server-status {
+  position: fixed; top: 14px; left: 14px; z-index: 1100;
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 6px 12px; border-radius: 999px;
+  background: var(--panel); color: var(--ink);
+  border: 2px solid var(--border);
+  font-size: 13px; font-weight: 600; line-height: 1;
+  box-shadow: var(--shadow);
+  user-select: none;
+  transition: border-color 0.25s ease, background 0.25s ease;
+}
+.server-status .status-dot {
+  width: 10px; height: 10px; border-radius: 50%;
+  background: #999; display: inline-block;
+  transition: background 0.25s ease, box-shadow 0.25s ease;
+}
+.server-status.status-online {
+  border-color: rgba(74, 200, 110, 0.55);
+  background: rgba(74, 200, 110, 0.08);
+}
+.server-status.status-online .status-dot {
+  background: #4ac86e;
+  box-shadow: 0 0 8px rgba(74, 200, 110, 0.65);
+  /* Soft pulsing glow so the "live" state feels alive. */
+  animation: status-pulse 2.4s ease-in-out infinite;
+}
+.server-status.status-offline {
+  border-color: rgba(217, 92, 92, 0.55);
+  background: rgba(217, 92, 92, 0.08);
+}
+.server-status.status-offline .status-dot { background: #d95c5c; }
+.server-status.status-unknown .status-dot { background: #999; }
+@keyframes status-pulse {
+  0%, 100% { box-shadow: 0 0 4px rgba(74, 200, 110, 0.45); }
+  50%      { box-shadow: 0 0 12px rgba(74, 200, 110, 0.85); }
+}
+
 /* Pokédex button — sits directly below the Options button in the top-right corner.
    Shown on the main menu and during runs. */
 #dex-btn {
@@ -712,10 +753,33 @@ button.primary:hover { background: var(--accent-deep); border-color: var(--accen
   width: 100%;
 }
 .adventure-row .card.event-card {
-  /* 2 cards per row → each fills (100% - 14px gap) / 2 of the row width. */
-  flex: 1 1 calc(50% - 7px);
-  max-width: calc(50% - 7px);
+  /* Cards split the row evenly regardless of count — 2 cards on the special step,
+     3 cards on the capture/trainer steps. The basis-zero + flex-grow:1 setup avoids
+     overflow when a row goes from 2 to 3 children. Cap individual width so a single-
+     card row doesn't stretch the whole way across. */
+  flex: 1 1 0;
+  min-width: 220px;
+  max-width: 360px;
 }
+
+/* ── Capture step: wild Pokémon picks + skip card ─────────────────────────── */
+.card.event-card.capture-pick .card-image { display: flex; align-items: center; justify-content: center; }
+.capture-pick-sprite {
+  width: 110px; height: 110px; image-rendering: pixelated; object-fit: contain;
+}
+.card.event-card.capture-skip .capture-skip-reward {
+  text-align: center; font-weight: 700; color: var(--accent-deep);
+  padding: 4px 8px 8px; font-size: 12px;
+}
+.card.event-card.capture-skip .capture-skip-reward.muted { color: var(--ink-soft); font-weight: 600; }
+
+/* ── Trainer step: visual distinction between Normal and Hard cards ──────── */
+.card.event-card.trainer-pick-hard {
+  /* Subtle warning tint so the hard option reads as the riskier pick at a glance. */
+  border-color: rgba(217, 124, 74, 0.45);
+  box-shadow: 0 0 0 1px rgba(217, 124, 74, 0.2) inset;
+}
+.card.event-card.trainer-pick-hard .ctitle { color: #c46435; }
 /* Vertically compact event cards — was 180px min-height; now ~135px with tighter
    header padding so the 2×2 grid fits comfortably in the phase host. */
 .card.event-card { min-height: 135px; }

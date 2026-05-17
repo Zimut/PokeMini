@@ -107,6 +107,20 @@ fastify.addHook('preHandler', async (req, rep) => {
 fastify.get('/health', { config: { rateLimit: { max: 60, timeWindow: '1 minute' } } },
   async () => ({ ok: true, ts: Date.now() }));
 
+// ─── /stats ──────────────────────────────────────────────────────────────
+// Public — no auth, just current activity numbers for the client's status
+// widget. "Online" = a player whose last_seen has been bumped within the
+// recent window (5 min by default, overridable via env). last_seen ticks on
+// every authenticated request, so this maps to active gameplay sessions.
+const ACTIVE_WINDOW_MS = parseInt(process.env.POKEMINI_ACTIVE_WINDOW_MS || (5 * 60 * 1000), 10);
+fastify.get('/stats', { config: { rateLimit: { max: 60, timeWindow: '1 minute' } } },
+  async () => {
+    const since = Date.now() - ACTIVE_WINDOW_MS;
+    const { n: online } = queries.countActivePlayersSince.get(since);
+    const { n: total }  = queries.countTotalPlayers.get();
+    return { online, total, ts: Date.now() };
+  });
+
 // ─── /player/claim ────────────────────────────────────────────────────────
 // First-time call mints a token for the name; subsequent calls from the same
 // owner can re-fetch it (legacy migration path) but a different requester gets

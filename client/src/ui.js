@@ -358,7 +358,7 @@ const ITEM_DESC = {
   tm: 'Reroll the secondary type of a Pokémon. Mono → adds; dual → rerolls.',
   hm: 'Reroll the Pokémon\'s ability (same evolutionary tier).',
   lure: 'During Wild Encounter: swap to a random Pokémon.',
-  spiritPendant: 'Release a Pokémon; both adjacent team members gain 10% of its highest stat permanently.',
+  spiritPendant: 'Release a Pokémon; both adjacent team members gain +1 level.',
 };
 
 export function abilityTooltip(abilityId, stage = 1) {
@@ -567,13 +567,15 @@ export function resetTopbarTrack() {
 
 // Step dots in the top bar — pass null to hide. When the current step advances we tag
 // the new dot with .just-activated for a one-shot fill animation in CSS.
+// Count tracks the new 9-step adventure layout (3 sets of 3).
+const TOPBAR_STEP_COUNT = 9;
 let prevStepShown = null;
 export function setTopbarStep(currentStep) {
   const el = $('#step-dots');
   if (!el) return;
   if (currentStep == null) { el.innerHTML = ''; prevStepShown = null; return; }
   const justActivated = prevStepShown != null && currentStep > prevStepShown ? currentStep : -1;
-  el.innerHTML = Array.from({ length: 5 }, (_, i) => {
+  el.innerHTML = Array.from({ length: TOPBAR_STEP_COUNT }, (_, i) => {
     const status = i < currentStep ? 'done' : i === currentStep ? 'current' : '';
     const flash = i === justActivated ? ' just-activated' : '';
     return `<div class="step-dot ${status}${flash}"></div>`;
@@ -581,8 +583,12 @@ export function setTopbarStep(currentStep) {
   prevStepShown = currentStep;
 }
 
-// Stat caps used to size the bars.
-const STAT_CAP = { hp: 200, atk: 200, spd: 200 };
+// Stat caps used to size the bars. Tuned to actual stat distributions so the bar
+// compositions show what a Pokémon is *focused* on rather than just "everything has
+// way more HP than ATK/SPD". HP scales with level much faster and has a much higher
+// base, so its bar uses a 500 ceiling; ATK and SPD share a 160 ceiling and end up
+// taking up a similar fraction of their bar.
+const STAT_CAP = { hp: 500, atk: 160, spd: 160 };
 function pct(value, cap) { return Math.max(0, Math.min(100, Math.round(value / cap * 100))); }
 
 // Reusable Pokémon card content (the inner of a .slot). Works for team / starter / wild / trade.

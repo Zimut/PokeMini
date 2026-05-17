@@ -6,6 +6,7 @@ import { setPhase, phaseHeader, renderTopbar, renderTeam, renderItems, attachToo
 import { markTeamAsSeen, markRankedWin, getSeenSet, getWonSet } from './dex.js';
 import { saveSnapshot, syncSnapshots, snapshotCount, findLocalMatch, getKnownPlayerNames } from './snapshots.js';
 import { t, getLocale, setLocale } from './i18n.js';
+import { refreshServerStatusLabels } from './serverStatus.js';
 import { spawnConfettiBurst, startConfettiRain } from './confetti.js';
 
 let state = null;
@@ -118,10 +119,8 @@ function onUseItem(itemId, target) {
     S.removeItem(state, idx); repaint(); return;
   }
   // Item dispatch
-  if (itemId === 'revive' && target.type === 'pokemon') {
-    const p = state.team[target.slot]; if (!p || p.inDaycare || !p.fainted) return;
-    p.fainted = false; p.hp = p.hpMax; S.removeItem(state, idx); repaint(); return;
-  }
+  // Revive was retired alongside the "always heal after every battle" rework — no
+  // Pokémon stays fainted between battles anymore, so there's nothing to revive.
   if (itemId === 'xVitamin' && target.type === 'pokemon') {
     const p = state.team[target.slot]; if (!p || p.inDaycare) return;
     p.xVitamin = true; S.removeItem(state, idx); repaint(); return;
@@ -158,10 +157,16 @@ function onUseItem(itemId, target) {
     S.removeItem(state, idx); repaint(); return;
   }
   if (itemId === 'spiritPendant' && target.type === 'pokemon') {
-    // Sacrifice mechanic — release the target Pokémon and grant 10% of its highest stat
-    // (HP / ATK / SPD) to both horizontally-adjacent team members (same row, column ±1
-    // in the F1-F2-F3 / B1-B2-B3 grid). Requires at least one adjacent ally on the team,
-    // and keeps the team-min-1 invariant.
+    // Sacrifice mechanic — release the target Pokémon and grant +1 level to both
+    // horizontally-adjacent team members (same row, column ±1 in the F1-F2-F3 /
+    // B1-B2-B3 grid). The +1 may push the ally past its evolution threshold, in
+    // which case the EVOLVED popup is shown instead of the level popup. Requires
+    // at least one adjacent ally on the team, and keeps the team-min-1 invariant.
+    //
+    // Design note: this used to grant 10% of the sacrificed Pokémon's highest stat,
+    // but HP is always the highest-magnitude stat by far, so the buff effectively
+    // always meant +HP. A flat +1 level keeps the synergy intuitive and gives the
+    // bonus the chance to trigger an evolution, which feels meaningful.
     const p = state.team[target.slot]; if (!p || p.inDaycare) return;
     if (S.teamCount(state) <= 1) return;                          // can't release the last Pokémon
     const row = target.slot[0];                                    // 'F' or 'B'
@@ -173,21 +178,20 @@ function onUseItem(itemId, target) {
       .map(s => ({ slot: s, ally: state.team[s] }))
       .filter(x => x.ally && !x.ally.inDaycare);
     if (adjAllies.length === 0) return;                            // refuse if no adjacent ally to benefit
-    // Pick the sacrifice's highest stat and compute the +bonus.
-    const stats = [
-      { key: 'hp',  val: p.hpMax },
-      { key: 'atk', val: p.atk },
-      { key: 'spd', val: p.spd },
-    ];
-    stats.sort((a, b) => b.val - a.val);
-    const top = stats[0];
-    const bonus = Math.max(1, Math.floor(top.val * 0.10));
-    // Apply to each adjacent ally and surface a popup over their slot.
+    // Apply +1 level to each adjacent ally. Mirrors the Evosoda flow: bump level,
+    // checkEvolve, recompute stats from the (possibly new) species + level, refill HP.
     for (const { slot, ally } of adjAllies) {
-      if (top.key === 'hp')  { ally.hpBonus = (ally.hpBonus || 0) + bonus; ally.hpMax += bonus; ally.hp += bonus; }
-      if (top.key === 'atk') { ally.atkBonus = (ally.atkBonus || 0) + bonus; ally.atk += bonus; }
-      if (top.key === 'spd') { ally.spdBonus = (ally.spdBonus || 0) + bonus; ally.spd += bonus; }
-      queueTeamPopup(slot, t('popup.statBonus', bonus, t('stat.' + top.key)), 'level');
+      const beforeSpecies = ally.speciesId, beforeLevel = ally.level;
+      ally.level += 1;
+      S.checkEvolve(ally);
+      const sp = SPECIES[ally.speciesId];
+      const stats = actualStats(sp, ally.level);
+      ally.hpMax = stats.hp + (ally.hpBonus || 0);
+      ally.atk   = stats.atk + (ally.atkBonus || 0);
+      ally.spd   = stats.spd + (ally.spdBonus || 0);
+      ally.hp    = ally.hpMax;     // sacrifice also fully heals the recipient
+      if (ally.speciesId !== beforeSpecies) queueTeamPopup(slot, t('popup.evolved'), 'evolve');
+      else if (ally.level > beforeLevel)    queueTeamPopup(slot, t('popup.levels', ally.level - beforeLevel), 'level');
     }
     // Release the sacrifice and consume the item.
     delete state.team[target.slot];
@@ -259,6 +263,7 @@ function initOptionsMenu() {
       if (!lang || lang === getLocale()) return;
       setLocale(lang);
       refreshOptionsMenuLabels();
+      refreshServerStatusLabels();
       if (state) navigateToCurrentPhase();
       else      showTitle();
     });
@@ -675,7 +680,7 @@ function startAdventure() {
   if (dc) repaint();
   state.daycare = null;   // defensive — never leak between adventures
   state.advStep = 0;
-  state.pendingEvents = null;
+  state.pendingStep = null;
   state.phase = 'adventure';
   save();
   showAdventureStep();
@@ -730,126 +735,26 @@ function legacyDaycareReturn() {
   return true;
 }
 
-function rollEventPair() {
-  // Layout: Wild + Trainer + PokéCenter are ALWAYS shown (top row), with the trainer
-  // rolling a fresh, unseen archetype each step. A fourth "special" card rolls from
-  // the variable pool (berry / trade / job / daycare / lostStash / wildHorde) and sits
-  // centered below. Forbidden-by-state events are skipped on the special slot.
-
-  const forbidden = new Set();
-  if (S.teamCount(state) <= 1) { forbidden.add('trade'); forbidden.add('daycare'); }
-  if (S.daycareSlot(state)) forbidden.add('daycare');
-  if (!S.hasItemSlot(state)) forbidden.add('lostStash');     // no point offering a stash with no slot
-
-  // The special card pool — pokeCenter promoted out (it's a static slot now), wild and
-  // trainer also excluded since they're guaranteed top-row cards. All six entries roll
-  // with equal weight via uniformPick — no weighting math.
-  const SPECIAL_KINDS = ['berry', 'trade', 'job', 'daycare', 'lostStash', 'wildHorde'];
-  const uniformPick = (kinds) => {
-    const valid = kinds.filter(k => !forbidden.has(k));
-    if (valid.length === 0) return null;
-    return valid[Math.floor(rng.float() * valid.length)];
-  };
-
-  const wildEv = { kind: 'wild' };
-
-  // Trainer — roll an archetype from the zone's pool, preferring those not yet seen
-  // this zone so the player doesn't fight Trainer X back-to-back. state.seenTrainers
-  // resets when the zone advances (see `state.zone++` in the Town flow).
-  const pool = TRAINERS[state.zone];
-  if (!state.seenTrainers) state.seenTrainers = [];
-  const seen = new Set(state.seenTrainers);
-  let avail = pool.filter(t => !seen.has(t.name));
-  if (avail.length === 0) avail = pool;        // fallback: every trainer already seen, reuse pool
-  const t = avail[Math.floor(rng.float() * avail.length)];
-  state.seenTrainers.push(t.name);
-  const trainerEv = { kind: 'trainer', trainer: t };
-
-  // PokéCenter — always available now. Renderer dims it when the team is already fully
-  // healed (no missing HP and no fainted members) so the player can still tell when the
-  // slot is "wasted", but selecting it is never gated.
-  const pokeCenterEv = { kind: 'pokeCenter' };
-
-  // Special — rolled uniformly from the variable pool. Wild Horde also pre-rolls its
-  // target species at this point so the card preview can show the actual matchup.
-  const specialKind = uniformPick(SPECIAL_KINDS);
-  let specialEv = null;
-  if (specialKind === 'wildHorde') {
-    const zonePool = ZONES[state.zone - 1].pool;
-    specialEv = { kind: 'wildHorde', species: zonePool[Math.floor(rng.float() * zonePool.length)] };
-  } else if (specialKind) {
-    specialEv = { kind: specialKind };
-  }
-
-  return { wild: wildEv, trainer: trainerEv, pokeCenter: pokeCenterEv, special: specialEv };
-}
-
+// ─── Adventure step dispatcher ───────────────────────────────────────────
+// Each zone is 9 steps in 3 sets of 3, fixed order per set:
+//   advStep % 3 === 0  →  Capture step  (pick 1 of 2 wilds, or skip → 2 berries)
+//   advStep % 3 === 1  →  Trainer step  (pick normal / hard / skip → 2 berries)
+//   advStep % 3 === 2  →  Special step  (pick 1 of 2 special events)
+// state.pendingStep caches the roll for the current step so refresh doesn't re-roll.
 function showAdventureStep() {
   if (state.advStep >= RUN.adventureSteps) { setTopbarStep(null); showPreBattle(); return; }
   state.phase = 'adventure';
-  setTopbarStep(state.advStep);                    // drive the dots in the top bar
-  // Reuse cached events if we already rolled this step (e.g. on resume); otherwise roll
-  // fresh. Older save formats stored pendingEvents either as an array of two events or
-  // as a `{wild, trainer, third}` trio — both shapes auto-migrate by re-rolling on the
-  // next step (we detect them by the absence of the new `pokeCenter` key). We also
-  // re-roll if a cached wildHorde event lacks its pre-rolled `species` field (added in
-  // the "show the actual horde Pokémon on the card" change).
-  const pe = state.pendingEvents;
-  const cachedHordeMissingSpecies = pe && pe.special && pe.special.kind === 'wildHorde' && !pe.special.species;
-  if (!pe || Array.isArray(pe) || !pe.pokeCenter || cachedHordeMissingSpecies) {
-    state.pendingEvents = rollEventPair();
-    save();
-  }
-  const quad = state.pendingEvents;
-  const zone = ZONES[state.zone - 1];
-  // PokéCenter is dimmed and disabled when the team is fully healed (no fainted members
-  // AND no missing HP), since the heal would do nothing. Wild and Trainer never gate.
-  const team = S.teamArray(state);
-  const pokeCenterUseless = team.length > 0 && team.every(p => !p.fainted && p.hp >= p.hpMax);
-  const cardHtml = (ev, key, lockLabel = null, silentDisable = false) => {
-    if (!ev) return '';
-    const c = eventCardContent(ev);
-    const kindCls = ev.kind === 'trainer' ? ' is-trainer'
-                  : (ev.kind === 'wild' || ev.kind === 'wildHorde') ? ' is-wild'
-                  : '';
-    const disabled = !!lockLabel || silentDisable;
-    const cls = `card event-card${kindCls}${disabled ? ' disabled' : ''}`;
-    return `<div class="${cls}" data-key="${key}">
-      <div class="card-header">
-        <div class="ctitle">${c.title}</div>
-        <div class="cdesc">${c.desc}</div>
-      </div>
-      <div class="card-image">${c.body}</div>
-      ${lockLabel ? `<div class="event-card-lock">${lockLabel}</div>` : ''}
-    </div>`;
-  };
-  const wildCard       = cardHtml(quad.wild,       'wild');
-  const trainerCard    = cardHtml(quad.trainer,    'trainer');
-  // PokéCenter when there's nothing to heal: just dim and disable, no overlay label.
-  const pokeCenterCard = cardHtml(quad.pokeCenter, 'pokeCenter', null, pokeCenterUseless);
-  const specialCard    = cardHtml(quad.special,    'special');
-  // Title intentionally omitted on the adventure step — the topbar already shows zone +
-  // step dots, and the four event cards take vertical priority over a header strip.
-  setPhase(`
-    <div class="adventure-trio">
-      <div class="adventure-row adventure-row-top">${wildCard}${trainerCard}</div>
-      <div class="adventure-row adventure-row-bottom">${pokeCenterCard}${specialCard}</div>
-    </div>
-  `);
-  document.querySelectorAll('.card[data-key]').forEach(el => {
-    el.onclick = () => {
-      if (el.classList.contains('disabled')) return;
-      const key = el.dataset.key;
-      const ev = quad[key];
-      if (ev) handleEvent(ev);
-    };
-  });
+  setTopbarStep(state.advStep);
+  const stepKind = state.advStep % 3;
+  if (stepKind === 0) return showCaptureStep();
+  if (stepKind === 1) return showTrainerStep();
+  return showSpecialStep();
 }
 
-// Step completion helper — consume the cached event pair, advance the step counter, save,
-// repaint HUD, and reroute to the next event choice (or to pre-battle if all steps are done).
+// Step completion helper — consume the cached step data, advance the step counter, save,
+// repaint HUD, and reroute to the next step (or to pre-battle if all steps are done).
 function completeAdventureStep() {
-  state.pendingEvents = null;
+  state.pendingStep = null;
   state.currentEvent = null;
   state.advStep++;
   save();
@@ -857,11 +762,279 @@ function completeAdventureStep() {
   showAdventureStep();
 }
 
-function eventTitle(kind) {
+// ─── Capture step (kind A) ───────────────────────────────────────────────
+// Two distinct wild Pokémon rolled from the zone pool at the step's level. Pick one to
+// catch (full team → sold for sellValue gold), or skip → 2 random small berries (subject
+// to free slots). Lure item re-rolls both, excluding the species already shown.
+function captureLevel() {
+  const zone = ZONES[state.zone - 1];
+  const bonus = state.zone === 1 ? 2 : state.zone === 2 ? 1 : 0;
+  return zone.min + state.advStep + bonus;
+}
+function rollCaptureStep(excludeIds = []) {
+  const zone = ZONES[state.zone - 1];
+  const excl = new Set(excludeIds);
+  let pool = zone.pool.filter(id => !excl.has(id));
+  if (pool.length < 2) pool = zone.pool;          // fallback if exclusion shrunk the pool too far
+  const shuffled = pool.slice().sort(() => rng.float() - 0.5);
+  const idA = shuffled[0];
+  const idB = shuffled.find(id => id !== idA) || shuffled[1] || idA;
+  const lvl = captureLevel();
   return {
-    wild:'Wild Pokémon', trainer:'Trainer Battle', berry:'Berry Gathering',
-    trade:'Trading', pokeCenter:'PokéCenter', job:'Part-Time Job', daycare:'Daycare',
-  }[kind];
+    kind: 'capture',
+    wildA: S.makeInstance(idA, lvl),
+    wildB: S.makeInstance(idB, lvl),
+    seenIds: [idA, idB],
+  };
+}
+function showCaptureStep() {
+  if (!state.pendingStep || state.pendingStep.kind !== 'capture') {
+    state.pendingStep = rollCaptureStep();
+    save();
+  }
+  renderCaptureStep();
+}
+function renderCaptureStep() {
+  const step = state.pendingStep;
+  const { wildA, wildB } = step;
+  const hasLure = S.findItem(state, 'lure') >= 0;
+  const slotsFree = S.hasItemSlot(state);
+  // Skip card disabled when item slots are full — explain why in the body text.
+  const skipBody = slotsFree
+    ? `<div class="capture-skip-reward">${t('capture.skipReward')}</div>`
+    : `<div class="capture-skip-reward muted">${t('capture.skipNoSlots')}</div>`;
+  const wildCardHtml = (p, key) => `
+    <div class="card event-card is-wild capture-pick" data-key="${key}">
+      <div class="card-header">
+        <div class="ctitle">${SPECIES[p.speciesId].name}</div>
+        <div class="cdesc">${t('slot.level', p.level)}</div>
+      </div>
+      <div class="card-image"><img src="${SPRITE_URL(p.speciesId)}" class="wild-preview-sprite capture-pick-sprite" alt="${SPECIES[p.speciesId].name}" loading="lazy"></div>
+    </div>`;
+  const skipCardHtml = `
+    <div class="card event-card capture-skip${slotsFree ? '' : ' disabled'}" data-key="skip">
+      <div class="card-header">
+        <div class="ctitle">${t('capture.skip')}</div>
+        <div class="cdesc"></div>
+      </div>
+      <div class="card-image">${eventImg('berry', 'oran-berry')}</div>
+      ${skipBody}
+    </div>`;
+  setPhase(`
+    ${phaseHeader(t('capture.title'), t('capture.subtitle'))}
+    <div class="adventure-trio">
+      <div class="adventure-row adventure-row-top">${wildCardHtml(wildA, 'A')}${wildCardHtml(wildB, 'B')}${skipCardHtml}</div>
+      ${hasLure ? `<div style="text-align:center;margin-top:14px;"><button id="btn-capture-lure">${t('capture.lureBtn')}</button></div>` : ''}
+    </div>
+  `);
+  document.querySelectorAll('.card[data-key]').forEach(el => {
+    el.onclick = () => {
+      if (el.classList.contains('disabled')) return;
+      const key = el.dataset.key;
+      if (key === 'A') catchAndAdvance(state.pendingStep.wildA);
+      else if (key === 'B') catchAndAdvance(state.pendingStep.wildB);
+      else if (key === 'skip') skipCaptureForBerries();
+    };
+  });
+  if (hasLure) {
+    document.querySelector('#btn-capture-lure').onclick = () => {
+      const idx = S.findItem(state, 'lure'); S.removeItem(state, idx);
+      // Exclude the currently-shown species AND any previous picks from this step's
+      // history (Lure used twice in a row shouldn't surface the same Pokémon again).
+      const prevSeen = state.pendingStep.seenIds || [];
+      state.pendingStep = rollCaptureStep(prevSeen);
+      // Carry the cumulative exclusion list forward so subsequent Lures keep excluding.
+      state.pendingStep.seenIds = Array.from(new Set([...prevSeen, ...state.pendingStep.seenIds]));
+      save(); repaint(); renderCaptureStep();
+    };
+  }
+}
+function catchAndAdvance(wild) {
+  const free = S.firstEmptySlot(state);
+  if (free) {
+    state.team[free] = wild;
+  } else {
+    state.money += S.sellValue(wild);
+  }
+  completeAdventureStep();
+}
+function skipCaptureForBerries() {
+  // Drop up to captureSkipBerryCount random small berries into free item slots.
+  // No-op if the player has no free slots (skip card is disabled in that case so
+  // this branch is a defensive guard for keyboard / programmatic clicks).
+  const smallIds = ['oranSmall', 'cheriSmall', 'salacSmall'];
+  for (let i = 0; i < RUN.captureSkipBerryCount; i++) {
+    if (!S.hasItemSlot(state)) break;
+    S.addItem(state, smallIds[Math.floor(rng.float() * smallIds.length)]);
+  }
+  completeAdventureStep();
+}
+
+// ─── Trainer step (kind B) ───────────────────────────────────────────────
+// Two distinct trainer archetypes rolled from the zone pool. One is offered as Normal,
+// the other as Hard. Hard trainer gets +hardTrainerExtraPokemon Pokémon (capped at
+// RUN.teamSize=6) and each enemy is +hardTrainerLevelPerZone * state.zone levels above
+// the normal level. Win rewards differ by difficulty (trainerWinLevels). Skip card
+// drops 2 random small berries the same way the capture step does.
+function rollTrainerStep() {
+  const pool = TRAINERS[state.zone];
+  if (!state.seenTrainers) state.seenTrainers = [];
+  const seen = new Set(state.seenTrainers);
+  let avail = pool.filter(tr => !seen.has(tr.name));
+  if (avail.length < 2) avail = pool;                  // fallback when too few unseen left
+  const shuffled = avail.slice().sort(() => rng.float() - 0.5);
+  const a = shuffled[0];
+  const b = shuffled.find(tr => tr.name !== a.name) || shuffled[1] || a;
+  // Mark BOTH as seen this zone — they're both burned regardless of which the player picks.
+  state.seenTrainers.push(a.name, b.name);
+  return { kind: 'trainer', normal: a, hard: b };
+}
+function showTrainerStep() {
+  if (!state.pendingStep || state.pendingStep.kind !== 'trainer') {
+    state.pendingStep = rollTrainerStep();
+    save();
+  }
+  renderTrainerStep();
+}
+function renderTrainerStep() {
+  const step = state.pendingStep;
+  const slotsFree = S.hasItemSlot(state);
+  const trainerCardHtml = (trainer, difficulty) => {
+    const isHard = difficulty === 'hard';
+    const c = trainerCardContent(trainer, difficulty);
+    return `<div class="card event-card is-trainer trainer-pick trainer-pick-${difficulty}" data-key="${difficulty}">
+      <div class="card-header">
+        <div class="ctitle">${c.title}</div>
+        <div class="cdesc">${c.desc}</div>
+      </div>
+      <div class="card-image">${c.body}</div>
+    </div>`;
+  };
+  const skipBody = slotsFree
+    ? `<div class="capture-skip-reward">${t('trainer.skipReward')}</div>`
+    : `<div class="capture-skip-reward muted">${t('capture.skipNoSlots')}</div>`;
+  const skipCardHtml = `
+    <div class="card event-card capture-skip${slotsFree ? '' : ' disabled'}" data-key="skip">
+      <div class="card-header">
+        <div class="ctitle">${t('trainer.skip')}</div>
+        <div class="cdesc"></div>
+      </div>
+      <div class="card-image">${eventImg('berry', 'oran-berry')}</div>
+      ${skipBody}
+    </div>`;
+  setPhase(`
+    ${phaseHeader(t('trainer.title'), t('trainer.subtitle'))}
+    <div class="adventure-trio">
+      <div class="adventure-row adventure-row-top">${trainerCardHtml(step.normal, 'normal')}${trainerCardHtml(step.hard, 'hard')}${skipCardHtml}</div>
+    </div>
+  `);
+  document.querySelectorAll('.card[data-key]').forEach(el => {
+    el.onclick = () => {
+      if (el.classList.contains('disabled')) return;
+      const key = el.dataset.key;
+      if (key === 'normal') {
+        state.currentEvent = { kind: 'trainer', trainer: step.normal, difficulty: 'normal' };
+        state.phase = 'event'; save();
+        startTrainerBattle(step.normal, 'normal');
+      } else if (key === 'hard') {
+        state.currentEvent = { kind: 'trainer', trainer: step.hard, difficulty: 'hard' };
+        state.phase = 'event'; save();
+        startTrainerBattle(step.hard, 'hard');
+      } else if (key === 'skip') {
+        skipCaptureForBerries();           // identical reward + behavior to capture skip
+      }
+    };
+  });
+}
+// Build title/desc/body for a trainer pick card. Body shows the roster preview at the
+// scaled level (hard difficulty rolls the roster +1 size and +zone levels per Pokémon).
+function trainerCardContent(trainer, difficulty) {
+  const zone = ZONES[state.zone - 1];
+  const isHard = difficulty === 'hard';
+  const normalLevel = zone.min + 1 + state.advStep + state.zone;
+  const trainerLevel = normalLevel + (isHard ? RUN.hardTrainerLevelPerZone * state.zone : 0);
+  // Hard adds extraPokemon to size, capped at teamSize. Pool may not have that many
+  // entries — fall back to repeating the last entry so the size still grows visibly.
+  const baseSize = trainer.size;
+  const size = Math.min(RUN.teamSize, baseSize + (isHard ? RUN.hardTrainerExtraPokemon : 0));
+  const ids = [];
+  for (let i = 0; i < size; i++) ids.push(trainer.pool[i] != null ? trainer.pool[i] : trainer.pool[trainer.pool.length - 1]);
+  const sprites = ids.map(id => {
+    const evoId = evolvedAt(id, trainerLevel);
+    const sp = SPECIES[evoId];
+    return `<img src="${SPRITE_URL(evoId)}" class="trainer-preview-sprite" alt="${sp.name}" title="${sp.name} L${trainerLevel}" loading="lazy">`;
+  }).join('');
+  const FALLBACK_TRAINERS = ['youngster','lass','hiker','bugcatcher','fisherman','sailor','beauty','birdkeeper','blackbelt','psychic'];
+  let h = 0;
+  for (const c of (trainer.name || '')) h = (h * 31 + c.charCodeAt(0)) | 0;
+  const fallbackSlug = FALLBACK_TRAINERS[Math.abs(h) % FALLBACK_TRAINERS.length];
+  const fallbackSrc  = TRAINER_SPRITE_URL(fallbackSlug);
+  const trainerImg = trainer.sprite
+    ? `<img src="${TRAINER_SPRITE_URL(trainer.sprite)}" class="event-image trainer-event-sprite" alt="${trainer.name}" loading="lazy" onerror="this.onerror=function(){this.style.display='none'};this.src='${fallbackSrc}'">`
+    : '';
+  const title = isHard ? t('trainer.hard.title') : t('trainer.normal.title');
+  const desc = isHard
+    ? t('trainer.hard.subtitle', RUN.trainerWinLevels.hard, RUN.hardTrainerExtraPokemon, RUN.hardTrainerLevelPerZone * state.zone)
+    : t('trainer.normal.subtitle', RUN.trainerWinLevels.normal);
+  return {
+    title: `${title} — ${trainer.name}`,
+    desc,
+    body: `${trainerImg}<div class="trainer-preview">${sprites}</div>`,
+  };
+}
+
+// ─── Special step (kind C) ───────────────────────────────────────────────
+// Pick 1 of 2 distinct special events from {berry, trade, job, daycare, lostStash,
+// wildHorde}. Same forbidden-by-state gating as the old special slot. The two picks
+// can NEVER be the same kind. No skip option here — special steps always fire.
+const SPECIAL_KINDS = ['berry', 'trade', 'job', 'daycare', 'lostStash', 'wildHorde'];
+function rollSpecialStep() {
+  const forbidden = new Set();
+  if (S.teamCount(state) <= 1) { forbidden.add('trade'); forbidden.add('daycare'); }
+  if (S.daycareSlot(state))    forbidden.add('daycare');
+  if (!S.hasItemSlot(state))   forbidden.add('lostStash');
+  let pool = SPECIAL_KINDS.filter(k => !forbidden.has(k));
+  if (pool.length < 2) pool = SPECIAL_KINDS;          // ungate everything as a last resort
+  const shuffled = pool.slice().sort(() => rng.float() - 0.5);
+  const make = (kind) => {
+    if (kind === 'wildHorde') {
+      const zonePool = ZONES[state.zone - 1].pool;
+      return { kind, species: zonePool[Math.floor(rng.float() * zonePool.length)] };
+    }
+    return { kind };
+  };
+  return { kind: 'special', a: make(shuffled[0]), b: make(shuffled[1] || shuffled[0]) };
+}
+function showSpecialStep() {
+  if (!state.pendingStep || state.pendingStep.kind !== 'special') {
+    state.pendingStep = rollSpecialStep();
+    save();
+  }
+  const step = state.pendingStep;
+  const cardHtml = (ev, key) => {
+    const c = eventCardContent(ev);
+    const kindCls = (ev.kind === 'wildHorde') ? ' is-wild' : '';
+    return `<div class="card event-card${kindCls}" data-key="${key}">
+      <div class="card-header">
+        <div class="ctitle">${c.title}</div>
+        <div class="cdesc">${c.desc}</div>
+      </div>
+      <div class="card-image">${c.body}</div>
+    </div>`;
+  };
+  setPhase(`
+    ${phaseHeader(t('special.title'), t('special.subtitle'))}
+    <div class="adventure-trio">
+      <div class="adventure-row adventure-row-top">${cardHtml(step.a, 'a')}${cardHtml(step.b, 'b')}</div>
+    </div>
+  `);
+  document.querySelectorAll('.card[data-key]').forEach(el => {
+    el.onclick = () => {
+      if (el.classList.contains('disabled')) return;
+      const ev = el.dataset.key === 'a' ? step.a : step.b;
+      handleEvent(ev);
+    };
+  });
 }
 // Auto-evolve a species id to the form it would take at the given level.
 function evolvedAt(speciesId, level) {
@@ -876,68 +1049,25 @@ function evolvedAt(speciesId, level) {
 
 // Tries the user-supplied local image at /assets/events/{kind}.png first; on 404, falls
 // back to the PokéAPI item icon below so the card never goes blank during development.
+// Filenames on disk are all-lowercase (Linux servers are case-sensitive), so we lowercase
+// the kind here even though canonical event ids like 'pokeCenter' use camelCase.
 function eventImg(kind, fallbackSlug) {
-  const local = `assets/events/${kind}.png`;
+  const local = `assets/events/${(kind || '').toLowerCase()}.png`;
   const fallback = ITEM_ICON_URL(fallbackSlug);
   return `<img src="${local}" class="event-image" loading="lazy" alt=""
                onerror="this.onerror=null;this.src='${fallback}';">`;
 }
 
-// Title + short description + image for each event type.
+// Title + short description + image for special-event cards rendered by showSpecialStep.
+// (Capture and trainer steps build their own cards directly — see renderCaptureStep /
+// renderTrainerStep — because they need step-specific visuals like the wild Pokémon
+// sprite and the normal/hard split.)
 function eventCardContent(ev) {
   switch (ev.kind) {
-    case 'wild': {
-      // Show every species in the zone's wild pool as a small sprite grid — the actual
-      // encounter still rolls one of them when the player clicks the card.
-      const zone = ZONES[state.zone - 1];
-      const sprites = zone.pool.map(id => {
-        const sp = SPECIES[id];
-        return `<img src="${SPRITE_URL(id)}" class="wild-preview-sprite" alt="${sp.name}" title="${sp.name}" loading="lazy">`;
-      }).join('');
-      return {
-        title: t('event.wild.title'),
-        desc:  t('event.wild.desc'),
-        body:  `<div class="wild-preview">${sprites}</div>`,
-      };
-    }
-    case 'trainer': {
-      const zone = ZONES[state.zone - 1];
-      // Trainer level formula: zone.min + 1 + advStep + state.zone. The trailing +zone
-      // is a difficulty bump so trainer Pokémon stay ahead of (or even with) the player's
-      // own level curve; otherwise it's too easy for a snowballing run to outscale the
-      // adventure trainers entirely. Keep this in sync with startTrainerBattle below.
-      const level = zone.min + 1 + state.advStep + state.zone;
-      const sprites = ev.trainer.pool.slice(0, ev.trainer.size).map(id => {
-        const evoId = evolvedAt(id, level);
-        const sp = SPECIES[evoId];
-        return `<img src="${SPRITE_URL(evoId)}" class="trainer-preview-sprite" alt="${sp.name}" title="${sp.name} L${level}" loading="lazy">`;
-      }).join('');
-      // Fallback: if Showdown doesn't have the intended sprite slug, pick a known-good
-      // generic trainer sprite from this pool, deterministically (same trainer name →
-      // same fallback every time so the visual is stable across reloads).
-      const FALLBACK_TRAINERS = ['youngster','lass','hiker','bugcatcher','fisherman','sailor','beauty','birdkeeper','blackbelt','psychic'];
-      let h = 0;
-      for (const c of (ev.trainer.name || '')) h = (h * 31 + c.charCodeAt(0)) | 0;
-      const fallbackSlug = FALLBACK_TRAINERS[Math.abs(h) % FALLBACK_TRAINERS.length];
-      const fallbackSrc  = TRAINER_SPRITE_URL(fallbackSlug);
-      // The onerror handler installs a SECOND onerror first (which hides on a second
-      // failure), then swaps src to the fallback. Doing it in that order prevents an
-      // infinite loop if both the intended and the fallback sprite 404.
-      const trainerImg = ev.trainer.sprite
-        ? `<img src="${TRAINER_SPRITE_URL(ev.trainer.sprite)}" class="event-image trainer-event-sprite" alt="${ev.trainer.name}" loading="lazy" onerror="this.onerror=function(){this.style.display='none'};this.src='${fallbackSrc}'">`
-        : '';
-      return {
-        title: t('event.trainer.title'),
-        desc:  ev.trainer.name,
-        body:  `${trainerImg}<div class="trainer-preview">${sprites}</div>`,
-      };
-    }
     case 'berry':
       return { title: t('event.berry.title'),      desc: t('event.berry.desc'),               body: eventImg('berry', 'oran-berry') };
     case 'trade':
       return { title: t('event.trade.title'),      desc: t('event.trade.desc'),               body: eventImg('trade', 'link-cable') };
-    case 'pokeCenter':
-      return { title: t('event.pokeCenter.title'), desc: t('event.pokeCenter.desc'),          body: eventImg('pokeCenter', 'super-potion') };
     case 'job':
       return { title: t('event.job.title'),        desc: t('event.job.desc', RUN.jobReward),  body: eventImg('job', 'amulet-coin') };
     case 'daycare':
@@ -976,84 +1106,24 @@ function eventCardContent(ev) {
 function handleEvent(ev) {
   // Commit the chosen event before dispatching so a refresh while inside the event
   // (e.g. on the Berry Gathering screen) resumes back into that event instead of
-  // sending the player to the adventure choice screen.
+  // sending the player to the adventure choice screen. Special-step events and the
+  // trainer step both go through here; capture step's state lives in pendingStep
+  // and never sets currentEvent, so it naturally resumes via showAdventureStep.
   state.phase = 'event';
   state.currentEvent = ev;
   save();
-  if (ev.kind === 'wild')       { startWildEncounter(); return; }
-  if (ev.kind === 'trainer')    { startTrainerBattle(ev.trainer); return; }
+  if (ev.kind === 'trainer')    { startTrainerBattle(ev.trainer, ev.difficulty || 'normal'); return; }
   if (ev.kind === 'berry')      { startBerryEvent(); return; }
   if (ev.kind === 'trade')      { startTradeEvent(); return; }
-  if (ev.kind === 'pokeCenter') { startPokeCenter(); return; }
   if (ev.kind === 'job')        { startJobEvent(); return; }
   if (ev.kind === 'daycare')    { startDaycareEvent(); return; }
   if (ev.kind === 'lostStash')  { startLostStashEvent(); return; }
   if (ev.kind === 'wildHorde')  { startWildHordeEvent(); return; }
 }
 
-// Wild encounter
-function startWildEncounter() {
-  // Cache the rolled wild Pokémon on state.currentEvent so a page refresh during the
-  // encounter resumes the SAME Pokémon — otherwise the player could F5 to reroll.
-  // Lure use also writes its new pokemon back into state.currentEvent.wild (see below).
-  if (!state.currentEvent.wild) {
-    state.currentEvent.wild = S.rollWild(state, rng);
-    save();
-  }
-  renderWildEncounter(state.currentEvent.wild, !!state.currentEvent.isLured);
-}
-
-function renderWildEncounter(wild, isLured) {
-  const sp = SPECIES[wild.speciesId];
-  setPhase(`
-    ${phaseHeader(t('wild.appeared'), t('wild.crosses', sp.name))}
-    <div class="slot display" style="max-width:420px;margin:20px auto;">${pokemonCardInnerHTML(wild)}</div>
-    <div style="display:flex;gap:12px;justify-content:center;flex-wrap:wrap;">
-      <button class="primary" id="btn-catch">${t('wild.catch')}</button>
-      <button class="primary" id="btn-battle">${t('wild.battle')}</button>
-      ${!isLured && S.findItem(state, 'lure') >= 0 ? `<button id="btn-lure">${t('item.lure.name')}</button>` : ''}
-      ${S.findItem(state, 'greatBall') >= 0 ? `<button id="btn-ball">${t('item.greatBall.name')} (+3)</button>` : ''}
-    </div>
-  `);
-  document.querySelector('#btn-catch').onclick = () => {
-    if (S.firstEmptySlot(state)) { state.team[S.firstEmptySlot(state)] = wild; }
-    else { state.money += S.sellValue(wild); }
-    completeAdventureStep();
-  };
-  document.querySelector('#btn-battle').onclick = () => {
-    grantTeamExpWithPopups(1);               // wild defeats grant +1 level (was +2)
-    // Battling (vs catching) drops a random small berry as a bonus — only if there's
-    // room in the inventory. Catching with a Great Ball doesn't grant this since the
-    // wild Pokémon itself is the reward.
-    if (S.hasItemSlot(state)) {
-      const smallIds = ['oranSmall', 'cheriSmall', 'salacSmall'];
-      const dropId = smallIds[Math.floor(rng.float() * smallIds.length)];
-      S.addItem(state, dropId);
-    }
-    completeAdventureStep();
-  };
-  if (document.querySelector('#btn-lure')) {
-    document.querySelector('#btn-lure').onclick = () => {
-      const idx = S.findItem(state, 'lure'); S.removeItem(state, idx);
-      const lured = S.rollWild(state, rng, { lure: true });
-      // Persist the lured roll so a refresh doesn't waste the Lure item by reverting
-      // back to the original (or to a fresh re-roll).
-      state.currentEvent.wild = lured;
-      state.currentEvent.isLured = true;
-      renderWildEncounter(lured, true); repaint();
-    };
-  }
-  if (document.querySelector('#btn-ball')) {
-    document.querySelector('#btn-ball').onclick = () => {
-      const idx = S.findItem(state, 'greatBall'); S.removeItem(state, idx);
-      const sp = SPECIES[wild.speciesId];
-      const upgraded = S.makeInstance(wild.speciesId, wild.level + 3);
-      if (S.firstEmptySlot(state)) state.team[S.firstEmptySlot(state)] = upgraded;
-      else state.money += S.sellValue(upgraded);
-      completeAdventureStep();
-    };
-  }
-}
+// (Wild encounter screen removed — capture is now handled in renderCaptureStep with
+// the two-pick / skip card layout. Old startWildEncounter / renderWildEncounter
+// functions were deleted with the adventure-flow rework.)
 
 // Trainer battle
 //
@@ -1076,46 +1146,47 @@ function trainerSlot(i, size) {
   return i < 3 ? 'F' + (i + 1) : 'B' + (i - 2);
 }
 
-function startTrainerBattle(trainer) {
+function startTrainerBattle(trainer, difficulty = 'normal') {
   const zone = ZONES[state.zone - 1];
-  // Trainer Pokémon level = zone.min + 1 + advStep + state.zone. The trailing +zone is
-  // a difficulty bump (Z1 +1, Z7 +7) so trainers don't fall behind a snowballing player.
-  // Trade offers keep their own `+2` formula since they're a one-shot recruit, not a fight.
-  const trainerLevel = zone.min + 1 + state.advStep + state.zone;
-  const roster = trainer.pool.slice(0, trainer.size).map((id, i) => ({
-    speciesId: id, level: trainerLevel, slot: trainerSlot(i, trainer.size)
+  // Base level uses the same formula as the old single-difficulty version. Hard adds
+  // hardTrainerLevelPerZone × state.zone per Pokémon, so Z1 hard = +1 lvl, Z7 hard = +7.
+  const isHard = difficulty === 'hard';
+  const normalLevel  = zone.min + 1 + state.advStep + state.zone;
+  const trainerLevel = normalLevel + (isHard ? RUN.hardTrainerLevelPerZone * state.zone : 0);
+  // Hard adds +hardTrainerExtraPokemon to roster size, capped at RUN.teamSize. Pool
+  // may not have that many distinct entries — repeat the last one in that case so the
+  // roster still visibly grows.
+  const baseSize = trainer.size;
+  const size = Math.min(RUN.teamSize, baseSize + (isHard ? RUN.hardTrainerExtraPokemon : 0));
+  const rosterIds = [];
+  for (let i = 0; i < size; i++) rosterIds.push(trainer.pool[i] != null ? trainer.pool[i] : trainer.pool[trainer.pool.length - 1]);
+  const roster = rosterIds.map((id, i) => ({
+    speciesId: id, level: trainerLevel, slot: trainerSlot(i, size),
   }));
   // Auto-evolve roster pokemon to fit level
   for (const m of roster) {
     let sp = SPECIES[m.speciesId];
     while (sp && sp.evolvesTo && sp.evolvesAt && m.level >= sp.evolvesAt) { m.speciesId = sp.evolvesTo; sp = SPECIES[m.speciesId]; }
   }
-  runBattle(roster, t('battle.trainerLabel', trainer.name), (result) => {
+  const label = isHard
+    ? `${t('battle.trainerLabel', trainer.name)} — ${t('trainer.hard.title')}`
+    : t('battle.trainerLabel', trainer.name);
+  runBattle(roster, label, (result) => {
     if (result.winner === 'A') {
-      // Win: money + XP.
+      // Win: money + difficulty-tiered XP. No berry drop anymore — the choice itself
+      // (and the level reward) is the reward.
       state.money += RUN.trainerWinMoney;
-      grantTeamExpWithPopups(2);
+      const xp = isHard ? RUN.trainerWinLevels.hard : RUN.trainerWinLevels.normal;
+      grantTeamExpWithPopups(xp);
     }
-    // Win or lose, drop a random small berry as a participation reward — if there's
-    // a free item slot. Keeps adventure trainers from feeling like dead-end fights
-    // when the player loses (no strike penalty anymore either).
-    if (S.hasItemSlot(state)) {
-      const smallIds = ['oranSmall', 'cheriSmall', 'salacSmall'];
-      S.addItem(state, smallIds[Math.floor(rng.float() * smallIds.length)]);
-    }
-    // Trainer losses do NOT cost a strike anymore — only gym leader losses and PvP
-    // losses do. The team-heal logic below still runs so the player doesn't get stuck
-    // with a permanently-damaged team after a wipe.
-    const allFainted = S.teamArray(state).every(p => p.fainted);
-    if (allFainted) S.healAll(state);
-    else            S.healSurvivors(state);
-    // Pre-stage the post-battle phase. We replicate completeAdventureStep's effects
-    // *inline* here so we don't accidentally render the next screen before the animation:
-    state.pendingEvents = null;
+    // After every battle the team is fully restored — no fainted persistence anymore,
+    // so the player walks into the next step with a clean slate. Trainer losses still
+    // do NOT cost a strike (only gym leader and PvP losses do).
+    S.healAll(state);
+    // Pre-stage the post-battle phase so a mid-animation refresh resumes cleanly.
+    state.pendingStep   = null;
     state.currentEvent  = null;
     state.advStep++;
-    // showAdventureStep handles advStep>=adventureSteps by routing to showPreBattle, so
-    // setting phase='adventure' is correct even on the very last step of the zone.
     state.phase = 'adventure';
   });
 }
@@ -1274,12 +1345,9 @@ function startDaycareEvent() {
 }
 
 // PokeCenter
-function startPokeCenter() {
-  S.healAll(state); repaint();
-  setPhase(`${phaseHeader(t('event.pokeCenter.title'), t('pokeCenter.intro'))}
-    <div style="text-align:center;padding:30px 0;"><button class="primary" id="btn-cont">${t('pokeCenter.continue')}</button></div>`);
-  document.querySelector('#btn-cont').onclick = () => completeAdventureStep();
-}
+// (PokéCenter retired — teams now heal fully after every battle, so the on-card heal
+// event has nothing to do. The handler was removed; the i18n keys stay around in case
+// they ever get repurposed.)
 
 // Lost Stash — pick 1 of 3 random items. Choices are cached on state.currentEvent so a
 // refresh mid-event doesn't reroll the offers. Forbidden-by-state rule in rollEventPair
@@ -1357,16 +1425,14 @@ function startWildHordeEvent() {
     });
     runBattle(roster, t('battle.hordeLabel', sp.name), (result) => {
       if (result.winner === 'A') {
-        grantTeamExpWithPopups(3);                     // big XP — the whole point of the event
+        grantTeamExpWithPopups(RUN.wildHordeLevels);   // smaller XP now — see RUN constants
       }
-      // Wild Horde losses do NOT cost a strike — same rule as adventure trainer losses.
-      // Only gym leader and PvP losses spend strikes now.
-      const allFainted = S.teamArray(state).every(p => p.fainted);
-      if (allFainted) S.healAll(state);
-      else            S.healSurvivors(state);
-      // Inline equivalent of completeAdventureStep, mirroring how startTrainerBattle
-      // pre-stages the post-battle phase so a mid-animation refresh doesn't reroll.
-      state.pendingEvents = null;
+      // Always heal fully after a battle — no fainted persistence anymore. Horde
+      // losses still don't cost a strike (only gym leader and PvP do).
+      S.healAll(state);
+      // Inline equivalent of completeAdventureStep so a mid-animation refresh resumes
+      // cleanly into the next step.
+      state.pendingStep   = null;
       state.currentEvent  = null;
       state.advStep++;
       state.phase = 'adventure';
@@ -1377,7 +1443,7 @@ function startWildHordeEvent() {
 // ─── Pre-battle setup — last chance to reorganize team / use items ────────
 function showPreBattle() {
   state.phase = 'preBattle';
-  state.pendingEvents = null;
+  state.pendingStep = null;
   save();
   const zone = ZONES[state.zone - 1];
 

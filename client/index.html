@@ -29,6 +29,14 @@
     <div id="item-slots" class="items"></div>
   </footer>
 
+  <!-- Server status pill — top-left, visible everywhere. Polls /api/stats every
+       30s. Green dot = server reachable + live player count; red dot = offline
+       fallback (the game still works locally, just no online matchmaking). -->
+  <div id="server-status" class="server-status status-unknown" title="Server status">
+    <span class="status-dot"></span>
+    <span class="status-text">…</span>
+  </div>
+
   <button id="options-btn" class="hidden" aria-label="Options" title="Options">⋮</button>
   <button id="dex-btn" class="hidden" aria-label="Pokédex" title="Pokédex">📖</button>
   <div id="options-menu" class="hidden">

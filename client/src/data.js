@@ -194,9 +194,10 @@ export function speciesByName(name) {
 }
 
 // ─── Items ────────────────────────────────────────────────────────────────
+// Revive was retired alongside the "teams always heal after every battle" change —
+// nothing ever stays fainted between fights now, so the item had no use case.
 export const ITEMS = {
   tradeCard:  { id:'tradeCard', name:'Trade Card', cost:250, target:'tradeEvent' },
-  revive:     { id:'revive',    name:'Revive',     cost:300, target:'faintedPokemon' },
   xVitamin:   { id:'xVitamin',  name:'X-Vitamin',  cost:300, target:'pokemon' },
   greatBall:  { id:'greatBall', name:'Great Ball', cost:400, target:'wildEvent' },
   evosoda:    { id:'evosoda',   name:'Evosoda',    cost:500, target:'pokemon' },
@@ -321,6 +322,12 @@ export const GYM_LEADERS = {
 };
 
 // ─── Run parameters ───────────────────────────────────────────────────────
+// Adventure structure (rewritten): each zone is 9 steps in 3 sets of 3, with the
+// step type determined by `advStep % 3`:
+//   0 → Capture step  (pick 1 of 2 wild Pokémon, or skip for 2 small berries)
+//   1 → Trainer step  (pick normal trainer, hard trainer, or skip for 2 small berries)
+//   2 → Special step  (pick 1 of 2 distinct special events)
+// After 9 steps the zone proceeds to its gym leader / PvP boss as before.
 export const RUN = {
   startingMoney: 0,
   startingStrikes: 3,
@@ -329,14 +336,24 @@ export const RUN = {
   starterLevel: 5,
   starterPool: [1, 4, 7, 25, 52, 39, 133, 29, 104],   // Bulbasaur, Charmander, Squirtle, Pikachu, Meowth, Jigglypuff, Eevee, NidoranF, Cubone
   starterChoices: 3,
-  adventureSteps: 5,
+  adventureSteps: 9,
   teamSize: 6,
   itemSlots: 3,
-  eventWeights: { wild:38, trainer:32, berry:5, trade:9, pokeCenter:8, job:5, daycare:3 },
   jobReward: 500,
   daycareLevels: 6,
   trainerWinMoney: 300,
   berrySellMoney: 300,            // full-size berries; small berries hardcode to $100 at the sell site
+  // New step constants ─────────────────────────────────────────────────
+  captureSkipBerryCount: 2,           // small berries dropped when you Skip the capture step
+  trainerSkipBerryCount: 2,           // same for the trainer-skip "Pick small berries" option
+  trainerWinLevels: { normal: 2, hard: 3 },  // team-level reward per trainer difficulty
+  hardTrainerLevelPerZone: 1,         // hard adds +N levels to each enemy, scaled by zone
+  hardTrainerExtraPokemon: 1,         // hard trainer brings +1 Pokémon (capped at teamSize=6)
+  wildHordeLevels: 1,                 // team-level reward on horde win (was 3)
+  // Save format version — bumped when the in-flight run shape changes meaningfully.
+  // Saves with a lower version are wiped on load so the player gets a clean start
+  // rather than crashing on a stale `pendingEvents` shape.
+  saveFormatVersion: 2,
 };
 
 // ─── Rank tiers ──────────────────────────────────────────────────────────
