@@ -799,35 +799,31 @@ function renderCaptureStep() {
   const { wildA, wildB } = step;
   const hasLure = S.findItem(state, 'lure') >= 0;
   const slotsFree = S.hasItemSlot(state);
-  // Skip card disabled when item slots are full — explain why in the body text.
+  // Each wild option uses the full Pokémon card layout (the same one as the starter
+  // pick and the team manager) so the player can compare stats, types, and ability at
+  // a glance before deciding. The skip card matches the slot's footprint with a
+  // berry icon + reward summary; disabled state grays it out when item slots are full.
+  const wildSlotHtml = (p, key) => `
+    <div class="slot capture-pick" data-key="${key}">
+      ${pokemonCardInnerHTML(p)}
+    </div>`;
   const skipBody = slotsFree
     ? `<div class="capture-skip-reward">${t('capture.skipReward')}</div>`
     : `<div class="capture-skip-reward muted">${t('capture.skipNoSlots')}</div>`;
-  const wildCardHtml = (p, key) => `
-    <div class="card event-card is-wild capture-pick" data-key="${key}">
-      <div class="card-header">
-        <div class="ctitle">${SPECIES[p.speciesId].name}</div>
-        <div class="cdesc">${t('slot.level', p.level)}</div>
+  const skipSlotHtml = `
+    <div class="slot capture-skip${slotsFree ? '' : ' disabled'}" data-key="skip">
+      <div class="capture-skip-body">
+        <div class="capture-skip-icon">${eventImg('berry', 'oran-berry')}</div>
+        <div class="capture-skip-label">${t('capture.skip')}</div>
+        ${skipBody}
       </div>
-      <div class="card-image"><img src="${SPRITE_URL(p.speciesId)}" class="wild-preview-sprite capture-pick-sprite" alt="${SPECIES[p.speciesId].name}" loading="lazy"></div>
-    </div>`;
-  const skipCardHtml = `
-    <div class="card event-card capture-skip${slotsFree ? '' : ' disabled'}" data-key="skip">
-      <div class="card-header">
-        <div class="ctitle">${t('capture.skip')}</div>
-        <div class="cdesc"></div>
-      </div>
-      <div class="card-image">${eventImg('berry', 'oran-berry')}</div>
-      ${skipBody}
     </div>`;
   setPhase(`
     ${phaseHeader(t('capture.title'), t('capture.subtitle'))}
-    <div class="adventure-trio">
-      <div class="adventure-row adventure-row-top">${wildCardHtml(wildA, 'A')}${wildCardHtml(wildB, 'B')}${skipCardHtml}</div>
-      ${hasLure ? `<div style="text-align:center;margin-top:14px;"><button id="btn-capture-lure">${t('capture.lureBtn')}</button></div>` : ''}
-    </div>
+    <div class="capture-grid">${wildSlotHtml(wildA, 'A')}${wildSlotHtml(wildB, 'B')}${skipSlotHtml}</div>
+    ${hasLure ? `<div style="text-align:center;margin-top:14px;"><button id="btn-capture-lure">${t('capture.lureBtn')}</button></div>` : ''}
   `);
-  document.querySelectorAll('.card[data-key]').forEach(el => {
+  document.querySelectorAll('.capture-grid [data-key]').forEach(el => {
     el.onclick = () => {
       if (el.classList.contains('disabled')) return;
       const key = el.dataset.key;
