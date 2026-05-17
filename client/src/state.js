@@ -190,7 +190,8 @@ export function checkEvolve(p) {
 
 export function sellValue(p) {
   const sp = SPECIES[p.speciesId];
-  return 200 * (sp.stage || 1);
+  // $100 × stage — final-form Pokémon (stage 3 / 2) sell for more than basic forms.
+  return 100 * (sp.stage || 1);
 }
 
 // Type chart helpers

@@ -353,10 +353,12 @@ export const RUN = {
   adventureSteps: 9,
   teamSize: 6,
   itemSlots: 3,
-  jobReward: 500,
+  jobReward: 300,
   daycareLevels: 6,
-  trainerWinMoney: 300,
-  berrySellMoney: 300,            // full-size berries; small berries hardcode to $100 at the sell site
+  // Adventure trainer cash reward, split by difficulty (mirrors trainerWinLevels).
+  // Lowered from the old flat $300 — hard is now meaningfully better-paying.
+  trainerWinMoney: { normal: 100, hard: 150 },
+  berrySellMoney: 200,            // full-size berries; small berries hardcode to $50 at the sell site
   // New step constants ─────────────────────────────────────────────────
   captureSkipBerryCount: 2,           // small berries dropped when you Skip the capture step
   trainerSkipBerryCount: 2,           // same for the trainer-skip "Pick small berries" option

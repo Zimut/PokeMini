@@ -1254,7 +1254,7 @@ function startTrainerBattle(trainer, difficulty = 'normal') {
     if (result.winner === 'A') {
       // Win: money + difficulty-tiered XP. No berry drop anymore — the choice itself
       // (and the level reward) is the reward.
-      state.money += RUN.trainerWinMoney;
+      state.money += isHard ? RUN.trainerWinMoney.hard : RUN.trainerWinMoney.normal;
       const xp = isHard ? RUN.trainerWinLevels.hard : RUN.trainerWinLevels.normal;
       grantTeamExpWithPopups(xp);
     }
@@ -2308,14 +2308,14 @@ function startTown() {
       </div>`;
     }).join('');
     // Pricing helper — used by both the dragover preview and the drop handler.
-    //   • Pokémon         → S.sellValue(p) (existing formula)
-    //   • Full-size berry → RUN.berrySellMoney ($300)
-    //   • Small berry     → flat $100
+    //   • Pokémon         → S.sellValue(p) (100 × stage)
+    //   • Full-size berry → RUN.berrySellMoney ($200)
+    //   • Small berry     → flat $50
     //   • Regular item    → half its shop cost (rounded down)
     const sellPriceForItem = (it) => {
       if (!it) return 0;
       const b = BERRIES[it.id];
-      if (b) return b.small ? 100 : RUN.berrySellMoney;
+      if (b) return b.small ? 50 : RUN.berrySellMoney;
       const itemDef = ITEMS[it.id];
       return itemDef ? Math.floor((itemDef.cost || 0) / 2) : 0;
     };
