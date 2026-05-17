@@ -997,18 +997,28 @@ button.primary:hover { background: var(--accent-deep); border-color: var(--accen
   object-fit: contain; flex-shrink: 0;
 }
 .card.event-card.is-trainer .trainer-preview {
-  /* Wraps to a 3-per-row grid: up to size 3 fits on one row, 4–6 sprites
-     break into a 2nd row of up to 3 more. Sprite size dropped from 64→48
-     so two rows occupy roughly the same vertical space as the old single
-     row of 64s, keeping the card footprint stable. */
-  flex-wrap: wrap; gap: 3px; flex-shrink: 1;
-  max-width: 162px;                  /* 3 × (48 + 2px pad) + 2 × 3 gap = ~156, +slack */
-  justify-content: center;
+  /* Single-row zigzag layout, same treatment as the wild-pool preview: sprites
+     shrink to fit the row, then scale up visually so they overlap each other
+     into a tight, energetic strip. overflow:visible lets the scaled+translated
+     art spill outside its layout box without getting clipped. */
+  flex-wrap: nowrap; gap: 1px; flex-shrink: 1;
+  max-width: 100%;
+  justify-content: center; align-items: center;
+  overflow: visible;
 }
 .card.event-card.is-trainer .trainer-preview-sprite {
-  width: 48px; height: 48px;
-  padding: 1px;
+  /* Drop the holder + padding from the base rule; use flex sizing instead of
+     fixed so 6-sprite teams (Z5+ hard) shrink gracefully into the row width. */
+  flex: 0 1 48px; min-width: 0; max-width: 48px;
+  width: auto; height: auto; aspect-ratio: 1 / 1;
+  padding: 0;
+  background: transparent;
+  border-radius: 0;
+  object-fit: contain;
+  transform-origin: center;
 }
+.card.event-card.is-trainer .trainer-preview-sprite:nth-child(odd)  { transform: scale(1.32) translateY(-5px); }
+.card.event-card.is-trainer .trainer-preview-sprite:nth-child(even) { transform: scale(1.32) translateY( 5px); }
 .card.event-card.is-trainer .card-image::after {
   content: ''; position: absolute; inset: 0;
   background: rgba(255,255,255,0.55);   /* whiten the backdrop for foreground contrast */

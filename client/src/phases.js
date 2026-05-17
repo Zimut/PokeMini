@@ -109,12 +109,12 @@ function onUseItem(itemId, target) {
   if (idx < 0) return;
   const def = ITEMS[itemId] || BERRIES[itemId];
   if (!def) return;
-  // Berry use on Pokémon — flat +15 (regular) or +5 (small) to the relevant stat.
-  // Fixed values are fairer than % scaling, which punished low-stat Pokémon.
+  // Berry use on Pokémon — amount comes from BERRIES[id].amount, which is the
+  // single source of truth for berry boost values. See data.js for the table.
   if (BERRIES[itemId] && target.type === 'pokemon') {
     const p = state.team[target.slot]; if (!p || p.inDaycare) return;
     const b = BERRIES[itemId];
-    const BONUS = b.small ? 5 : 15;
+    const BONUS = b.amount;
     if (b.stat === 'hp')  {
       p.hpBonus += BONUS; p.hpMax += BONUS; p.hp += BONUS;
     }
@@ -723,10 +723,11 @@ function showStarterPick() {
 
 // ─── Phase: adventure ─────────────────────────────────────────────────
 function startAdventure() {
-  // Daycare return — applies level gains / evolution check in-place on the team slot
-  // that the Pokémon never left. Legacy migration path: older saves stored a Pokémon
-  // copy in state.daycare and deleted the team slot; we detect that by the presence
-  // of a speciesId on state.daycare and fall back to the old slot-into-firstEmpty flow.
+  // Defensive daycare return — the primary path runs at startTown() now (so the
+  // returned Pokémon is available during the shop phase). This second call here is
+  // a safety net for any save where a daycare Pokémon somehow slipped past town
+  // (legacy saves, mid-flow refresh edge cases). Idempotent — no-ops if there's
+  // nothing to return.
   const dc = legacyDaycareReturn() || newDaycareReturn();
   if (dc) repaint();
   state.daycare = null;   // defensive — never leak between adventures
@@ -1325,7 +1326,7 @@ function startBerryEvent() {
     return `<div class="card berry-pick" data-id="${b.id}">
       <div class="berry-pick-info">
         <div class="ctitle">${localizedName}</div>
-        <div class="csub">+15 ${statLabel}</div>
+        <div class="csub">+${b.amount} ${statLabel}</div>
       </div>
       ${iconUrl ? `<img src="${iconUrl}" alt="${localizedName}" class="berry-pick-icon" loading="lazy">` : ''}
     </div>`;
@@ -1448,11 +1449,13 @@ function startDaycareEvent() {
       if (data.type !== 'pokemon') return;
       const p = state.team[data.slot];
       if (!p) return;
-      if (p.inDaycare) return;                   // shouldn't happen — daycare slots aren't draggable
+      if (p.inDaycare) return;                   // can't park a Pokémon that's already there
       if (S.teamCount(state) <= 1) return;
-      // Tag the Pokémon in-place — it keeps its slot but is locked out of battle / interactions
-      // until the next adventure starts. state.daycare remembers the slot for quick lookup
-      // (and so the legacy-save migration path in startAdventure stays simple).
+      // Tag the Pokémon in-place — it keeps its slot but is locked out of battle / item
+      // interactions until town (where the return now happens). The slot itself stays
+      // draggable so the player can rearrange team layout while waiting. state.daycare
+      // remembers the original slot but S.daycareSlot() finds the current slot
+      // dynamically via the flag, so a mid-daycare swap is safe.
       p.inDaycare = true;
       state.daycare = { slot: data.slot };
       completeAdventureStep();
@@ -2283,6 +2286,17 @@ function showBattleAnimation(snapA, snapB, result, opponentLabel, callback) {
 function startTown() {
   setTopbarStep(null);
   state.phase = 'town';
+  // Daycare return happens AT TOWN — the Pokémon you parked during this zone's
+  // adventure comes back the moment you reach town, with level gains applied.
+  // Previously this fired at the start of the NEXT adventure, which meant the
+  // player couldn't use / manage / sell the returned Pokémon during the town shop
+  // phase. Idempotent: if a refresh re-enters startTown after the return already
+  // ran, daycareSlot() finds no flagged slot and the helper no-ops.
+  const dcReturned = legacyDaycareReturn() || newDaycareReturn();
+  if (dcReturned) {
+    state.daycare = null;
+    repaint();
+  }
   // Persist the offered shop items so refreshing town doesn't reshuffle the catalog
   // and let the player rotate offers by reloading.
   if (!state.townOffer) {

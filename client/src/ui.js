@@ -592,9 +592,9 @@ export function setTopbarStep(currentStep) {
 // Stat caps used to size the bars. Tuned to actual stat distributions so the bar
 // compositions show what a Pokémon is *focused* on rather than just "everything has
 // way more HP than ATK/SPD". HP scales with level much faster and has a much higher
-// base, so its bar uses a 500 ceiling; ATK and SPD share a 160 ceiling and end up
+// base, so its bar uses a 400 ceiling; ATK and SPD share a 160 ceiling and end up
 // taking up a similar fraction of their bar.
-const STAT_CAP = { hp: 500, atk: 160, spd: 160 };
+const STAT_CAP = { hp: 400, atk: 160, spd: 160 };
 function pct(value, cap) { return Math.max(0, Math.min(100, Math.round(value / cap * 100))); }
 
 // Reusable Pokémon card content (the inner of a .slot). Works for team / starter / wild / trade.
@@ -676,18 +676,21 @@ export function renderTeam(state, opts = {}) {
         tag.textContent = t('daycare.tag');
         div.appendChild(tag);
       }
-      // Drag source — locked while at daycare to keep the player from selling/trading/feeding
-      // a Pokémon that isn't actually there.
-      if (!p.inDaycare) {
-        div.draggable = true;
-        div.addEventListener('dragstart', (e) => {
-          e.dataTransfer.setData('text/plain', JSON.stringify({ type:'pokemon', slot }));
-          // Mirror the drag payload onto window so drop targets can read it during dragover
-          // (dataTransfer.getData is otherwise locked to the drop event for security reasons).
-          window.__pmDrag = { type: 'pokemon', slot };
-        });
-        div.addEventListener('dragend', () => { window.__pmDrag = null; });
-      }
+      // Drag source — daycare-occupied slots are now ALSO draggable so the player
+      // can reorganize their team layout without waiting for the Pokémon to come
+      // back. The actual "do something to the daycare member" guards (item use,
+      // selling, trading) live in their respective handlers and still check
+      // p.inDaycare, so swapping is the only thing newly allowed here. The
+      // inDaycare flag rides on the Pokémon object so it follows the swap, and
+      // S.daycareSlot() finds the new position via the flag — no extra bookkeeping.
+      div.draggable = true;
+      div.addEventListener('dragstart', (e) => {
+        e.dataTransfer.setData('text/plain', JSON.stringify({ type:'pokemon', slot }));
+        // Mirror the drag payload onto window so drop targets can read it during dragover
+        // (dataTransfer.getData is otherwise locked to the drop event for security reasons).
+        window.__pmDrag = { type: 'pokemon', slot };
+      });
+      div.addEventListener('dragend', () => { window.__pmDrag = null; });
       // (Release button removed — letting the player cull the team on demand made it too
       // easy to keep only top performers. Selling at Town is still the way to free a slot.)
     }
@@ -745,7 +748,7 @@ export function renderItems(state, opts = {}) {
       });
       div.addEventListener('dragend', () => { window.__pmDrag = null; });
       const tooltipBody = isBerry
-        ? t('berry.tooltip', t('stat.' + BERRIES[item.id].stat), isSmallBerry ? 5 : 15)
+        ? t('berry.tooltip', t('stat.' + BERRIES[item.id].stat), BERRIES[item.id].amount)
         : itemTooltip(item.id);
       attachTooltip(div, localizedName, tooltipBody);
     } else {

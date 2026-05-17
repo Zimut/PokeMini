@@ -209,18 +209,20 @@ export const ITEMS = {
   spiritPendant: { id:'spiritPendant', name:'Spirit Pendant', cost:300, target:'pokemon' },
 };
 
+// Berry boost amounts are the source of truth here — both the use-item handler
+// (phases.js) and the tooltip/preview text (ui.js, phases.js berry pick card)
+// read `b.amount` directly. HP berries are worth 2× ATK/SPD per use, matching
+// the roughly 2× larger raw HP values on Pokémon stat lines.
 export const BERRIES = {
-  oran:  { id:'oran',  name:'Oran Berry',  stat:'hp',  amount:8 },
-  cheri: { id:'cheri', name:'Cheri Berry', stat:'atk', amount:6 },
-  salac: { id:'salac', name:'Salac Berry', stat:'spd', amount:6 },
-  // Small berries — 1/3 of the standard +15 boost. Awarded when the player chooses
-  // "Pick small berries" instead of capturing a Pokémon or fighting a trainer; also
-  // the participation drop for adventure trainer battles. The `amount` field below
-  // is informational only — the actual bonus is applied via the BONUS constant in
-  // the use-item handler (see phases.js).
-  oranSmall:  { id:'oranSmall',  name:'Small Oran',  stat:'hp',  amount:8, small:true },
-  cheriSmall: { id:'cheriSmall', name:'Small Cheri', stat:'atk', amount:6, small:true },
-  salacSmall: { id:'salacSmall', name:'Small Salac', stat:'spd', amount:6, small:true },
+  oran:  { id:'oran',  name:'Oran Berry',  stat:'hp',  amount:20 },
+  cheri: { id:'cheri', name:'Cheri Berry', stat:'atk', amount:10 },
+  salac: { id:'salac', name:'Salac Berry', stat:'spd', amount:10 },
+  // Small berries — half the boost of the full version. Awarded when the player
+  // chooses "Pick small berries" instead of capturing a Pokémon or fighting a
+  // trainer; also the participation drop for adventure trainer battles.
+  oranSmall:  { id:'oranSmall',  name:'Small Oran',  stat:'hp',  amount:10, small:true },
+  cheriSmall: { id:'cheriSmall', name:'Small Cheri', stat:'atk', amount:5,  small:true },
+  salacSmall: { id:'salacSmall', name:'Small Salac', stat:'spd', amount:5,  small:true },
 };
 
 // ─── Zones ────────────────────────────────────────────────────────────────
