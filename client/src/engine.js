@@ -853,14 +853,42 @@ function onBattleStart(teamA, teamB, rng, log) {
       }
       return false;
     };
-    for (const u of team.units) {
-      if (u.fainted) continue;
-      if (battleStartDisabled && u.abilityId !== 'disrupt') continue;
+    // Helper: fire a unit's current ability once, respecting Mr.Mime/encore reps
+    // and photosynthesis pings. Centralized so both passes call the same logic.
+    const fireUnit = (u) => {
       const repeats = 1 + mimicBoost(u, team);
       for (let r = 0; r < repeats; r++) {
         const triggered = runAbility(u);
         if (triggered) pingPhotosynthesis(u, team, enemy, rng, log);
       }
+    };
+    // Pass 1: imposters fire FIRST so they can copy the original ally before that
+    // ally's own battle-start ability fires (matters for one-shot triggers like
+    // Snorlax's body-slam stack init, etc.). Once Ditto copies, its abilityId is
+    // overwritten with the copied ability — if that ability is also a battle-start
+    // trigger (Magnet Pull, Cloud Nine, Intimidate, Helping Hand, etc.), Ditto
+    // fires it immediately so the player sees the copied effect, not just the
+    // copied sprite. A flag is set so Pass 2 skips it (otherwise the now-copied
+    // ability would fire a second time).
+    for (const u of team.units) {
+      if (u.fainted) continue;
+      if (u.abilityId !== 'imposter') continue;
+      if (battleStartDisabled) continue;        // Jynx/Disrupt blocks imposter too
+      u._imposterFired = true;                  // mark before any mutation
+      fireUnit(u);                              // fires imposter → copies ally → u.abilityId = ally's
+      // If the copy yielded a non-imposter battle-start ability, fire that too.
+      // (Skip if copy failed and u.abilityId is still 'imposter'.)
+      if (u.abilityId && u.abilityId !== 'imposter') {
+        fireUnit(u);
+      }
+    }
+    // Pass 2: every non-imposter unit, plus any imposter that never fired Pass 1
+    // (battle-start disabled by Disrupt, or already fainted).
+    for (const u of team.units) {
+      if (u.fainted) continue;
+      if (battleStartDisabled && u.abilityId !== 'disrupt') continue;
+      if (u._imposterFired) continue;           // already handled in Pass 1
+      fireUnit(u);
     }
   };
   fireForTeam(teamA, teamB);

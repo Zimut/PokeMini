@@ -660,6 +660,56 @@ button.primary:hover { background: var(--accent-deep); border-color: var(--accen
   position: relative; z-index: 1;
   display: block;
 }
+
+/* ── Shiny visual treatment ──────────────────────────────────────────────
+   Iconic gold glow around the sprite + a faint inner-ring on the wrap that
+   pulses slowly so a shiny stands out in the team card grid. Drop-shadow
+   stacks two passes (tight + soft) for a richer halo than a single shadow.
+   Applied to anything in the game showing a Pokémon sprite — capture pick,
+   starter pick, team manager, trade screen, dex detail, battle arena. */
+.slot-sprite.shiny {
+  filter:
+    drop-shadow(0 0 3px rgba(255, 215, 0, 1))
+    drop-shadow(0 0 8px rgba(255, 215, 0, 0.7))
+    drop-shadow(0 0 14px rgba(255, 180, 60, 0.45));
+}
+.slot-sprite-wrap.shiny {
+  background: radial-gradient(circle, rgba(255, 215, 0, 0.18) 0%, rgba(255, 215, 0, 0) 70%);
+  box-shadow: inset 0 0 0 2px rgba(255, 215, 0, 0.55);
+  animation: shiny-pulse 2.2s ease-in-out infinite;
+}
+/* Sparkle in the top-right corner — purely decorative, sized to read at all card scales. */
+.slot-sprite-wrap.shiny::after {
+  content: '✦';
+  position: absolute;
+  top: 2px; right: 4px;
+  z-index: 2;
+  color: #ffd700;
+  font-size: 16px;
+  font-weight: 900;
+  text-shadow: 0 0 4px rgba(255, 215, 0, 0.85), 0 0 8px rgba(255, 180, 60, 0.6);
+  pointer-events: none;
+  animation: shiny-sparkle 2.2s ease-in-out infinite;
+}
+@keyframes shiny-pulse {
+  0%, 100% { box-shadow: inset 0 0 0 2px rgba(255, 215, 0, 0.45); }
+  50%      { box-shadow: inset 0 0 0 2px rgba(255, 215, 0, 0.85); }
+}
+@keyframes shiny-sparkle {
+  0%, 100% { opacity: 0.65; transform: scale(0.9) rotate(0deg); }
+  50%      { opacity: 1;    transform: scale(1.15) rotate(15deg); }
+}
+
+/* Battle arena — the slot img doesn't sit inside a sprite-wrap there, so apply
+   the same drop-shadow directly to the img. Sparkle would clutter the battle
+   so we skip it; the gold halo is enough to read at a glance. Scoped to the
+   battle host so it doesn't double-up with the team-card .slot-sprite.shiny rule. */
+.battle-arena img.shiny {
+  filter:
+    drop-shadow(0 0 3px rgba(255, 215, 0, 1))
+    drop-shadow(0 0 7px rgba(255, 215, 0, 0.7))
+    drop-shadow(0 0 12px rgba(255, 180, 60, 0.45));
+}
 .slot-info { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
 .slot-header { display: flex; justify-content: space-between; align-items: baseline; gap: 6px; }
 .slot-name {

@@ -1828,7 +1828,7 @@ function showBattleAnimation(snapA, snapB, result, opponentLabel, callback) {
         <div class="hpbar-ticks"></div>
       </div>
       <div class="dmg-counter" title="Damage + healing dealt this battle">${dmg > 0 ? dmg : ''}</div>
-      <img src="${SPRITE_URL(u.species.id, u.shiny)}" alt="${u.name}" loading="lazy">
+      <img src="${SPRITE_URL(u.species.id, u.shiny)}" alt="${u.name}" class="${u.shiny ? 'shiny' : ''}" loading="lazy">
     `;
   }
 

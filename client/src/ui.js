@@ -612,7 +612,7 @@ export function pokemonCardInnerHTML(p) {
   const abilityId = p.ability || sp.ability;
   return `
     <div class="slot-main">
-      <div class="slot-sprite-wrap"><img class="slot-sprite" src="${SPRITE_URL(sp.id, p.shiny)}" alt="${sp.name}" loading="lazy"></div>
+      <div class="slot-sprite-wrap${p.shiny ? ' shiny' : ''}"><img class="slot-sprite${p.shiny ? ' shiny' : ''}" src="${SPRITE_URL(sp.id, p.shiny)}" alt="${sp.name}" loading="lazy"></div>
       <div class="slot-info">
         <div class="slot-header">
           <span class="slot-name">${sp.name}</span>
