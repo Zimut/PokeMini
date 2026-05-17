@@ -210,7 +210,7 @@ const en = {
   'item.tradeCard.desc':     'During Trading: reroll the offered Pokémon once.',
   'item.revive.desc':        'Revive a fainted Pokémon to full HP.',
   'item.xVitamin.desc':      'Target enters next battle with +50% HP/ATK/SPD.',
-  'item.greatBall.desc':     'Capture a wild Pokémon at +3 levels.',
+  'item.greatBall.desc':     'During the capture step, drag onto a wild Pokémon to catch it at +3 levels.',
   'item.evosoda.desc':       'Target Pokémon gains 3 levels.',
   'item.tm.desc':            'Reroll the secondary type of a Pokémon. Mono → adds; dual → rerolls.',
   'item.hm.desc':            "Reroll the Pokémon's ability (same evolutionary tier).",
@@ -225,7 +225,7 @@ const en = {
   'berry.cheriSmall.name': 'Small Cheri',
   'berry.salacSmall.name': 'Small Salac',
   'berry.tooltip': (stat, amount) => `Apply to a Pokémon: raises ${stat} by ${amount} permanently.`,
-  'berry.pickedDesc': (stat) => `+20 ${stat}`,
+  'berry.pickedDesc': (stat) => `+15 ${stat}`,
 
   // ─── Stats ───────────────────────────────────────────────────────────
   'stat.hp':  'HP',
@@ -468,7 +468,7 @@ const ptBR = {
   'item.tradeCard.desc':     'Durante uma Troca: re-sorteia o Pokémon ofertado uma vez.',
   'item.revive.desc':        'Reviva um Pokémon desmaiado com HP máximo.',
   'item.xVitamin.desc':      'O alvo entra na próxima batalha com +50% HP/ATK/SPD.',
-  'item.greatBall.desc':     'Captura um Pokémon selvagem com +3 níveis.',
+  'item.greatBall.desc':     'Na etapa de captura, arraste para um Pokémon selvagem para capturá-lo com +3 níveis.',
   'item.evosoda.desc':       'O Pokémon alvo ganha 3 níveis.',
   'item.tm.desc':            'Re-sorteia o tipo secundário do Pokémon. Mono → adiciona; dual → troca.',
   'item.hm.desc':            'Re-sorteia a habilidade do Pokémon (mesma fase evolutiva).',
@@ -483,7 +483,7 @@ const ptBR = {
   'berry.cheriSmall.name': 'Cheri Pequena',
   'berry.salacSmall.name': 'Salac Pequena',
   'berry.tooltip': (stat, amount) => `Aplique a um Pokémon: aumenta ${stat} em ${amount} permanentemente.`,
-  'berry.pickedDesc': (stat) => `+20 ${stat}`,
+  'berry.pickedDesc': (stat) => `+15 ${stat}`,
 
   // ─── Stats ───────────────────────────────────────────────────────────
   'stat.hp':  'HP',

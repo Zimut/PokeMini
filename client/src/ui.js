@@ -2,7 +2,13 @@
 import { SPECIES, ITEMS, BERRIES, ZONES, rankFromElo } from './data.js';
 import { t } from './i18n.js';
 
-export const SPRITE_URL = (id) => `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/${id}.png`;
+// SPRITE_URL — pass shiny:true to get the alternate-palette variant from PokeAPI's
+// `/sprites/pokemon/shiny/` folder. All existing one-arg callers continue to work
+// (default false → normal sprite). Used everywhere a Pokémon is rendered.
+export const SPRITE_URL = (id, shiny = false) =>
+  shiny
+    ? `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/shiny/${id}.png`
+    : `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/${id}.png`;
 export const ITEM_ICON_URL = (slug) => `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/items/${slug}.png`;
 // Trainer sprites come from Pokémon Showdown's CDN — it has a complete Gen 1 roster
 // with consistent naming. PokeAPI's trainers folder is patchy by comparison.
@@ -353,7 +359,7 @@ const ITEM_DESC = {
   tradeCard: 'During Trading: reroll the offered Pokémon once.',
   revive: 'Revive a fainted Pokémon to full HP.',
   xVitamin: 'Target enters next battle with +50% HP/ATK/SPD.',
-  greatBall: 'Capture a wild Pokémon at +3 levels.',
+  greatBall: 'During the capture step, drag onto a wild Pokémon to catch it at +3 levels.',
   evosoda: 'Target Pokémon gains 3 levels.',
   tm: 'Reroll the secondary type of a Pokémon. Mono → adds; dual → rerolls.',
   hm: 'Reroll the Pokémon\'s ability (same evolutionary tier).',
@@ -606,7 +612,7 @@ export function pokemonCardInnerHTML(p) {
   const abilityId = p.ability || sp.ability;
   return `
     <div class="slot-main">
-      <div class="slot-sprite-wrap"><img class="slot-sprite" src="${SPRITE_URL(sp.id)}" alt="${sp.name}" loading="lazy"></div>
+      <div class="slot-sprite-wrap"><img class="slot-sprite" src="${SPRITE_URL(sp.id, p.shiny)}" alt="${sp.name}" loading="lazy"></div>
       <div class="slot-info">
         <div class="slot-header">
           <span class="slot-name">${sp.name}</span>
@@ -732,7 +738,7 @@ export function renderItems(state, opts = {}) {
       });
       div.addEventListener('dragend', () => { window.__pmDrag = null; });
       const tooltipBody = isBerry
-        ? t('berry.tooltip', t('stat.' + BERRIES[item.id].stat), isSmallBerry ? 5 : 20)
+        ? t('berry.tooltip', t('stat.' + BERRIES[item.id].stat), isSmallBerry ? 5 : 15)
         : itemTooltip(item.id);
       attachTooltip(div, localizedName, tooltipBody);
     } else {

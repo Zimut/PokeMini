@@ -32,13 +32,17 @@ export function actualStats(species, level) {
 function makeBp(member, sideKey, slot) {
   const sp = SPECIES[member.speciesId];
   if (!sp) throw new Error(`unknown species ${member.speciesId}`);
-  const stats = actualStats(sp, member.level);
+  // Shiny members get the +15% base-stat boost applied before bonuses. The shiny
+  // flag is carried on the BP so the battle renderer can swap to the shiny sprite.
+  const shiny = !!member.shiny;
+  const rawStats = actualStats(sp, member.level);
+  const stats = shiny
+    ? { hp: Math.round(rawStats.hp * 1.15), atk: Math.round(rawStats.atk * 1.15), spd: Math.round(rawStats.spd * 1.15) }
+    : rawStats;
   // Berry/TM/HM/Evosoda modifications applied via member fields
   let hpMax = stats.hp + (member.hpBonus || 0);
   let atk   = stats.atk + (member.atkBonus || 0);
   let spd   = stats.spd + (member.spdBonus || 0);
-  // Snorlax Thick Fat → +30% base HP at battle start
-  // (thickFat retired — Snorlax now uses bodySlam, which adds bonus damage from current HP.)
   // Honor a pre-existing fainted state passed in via the roster (e.g., a Pokémon that
   // fainted in a prior trainer battle and hasn't been revived). Those start the battle
   // already KO'd: visible in the arena but greyed out and unable to act.
@@ -49,6 +53,7 @@ function makeBp(member, sideKey, slot) {
     type1: member.type1 || sp.type1, type2: member.type2 || sp.type2,
     abilityId: member.abilityOverride || sp.ability,
     hp: preFainted ? 0 : hpMax, hpMax, atk, spd,
+    shiny,                                  // carried through to the animation snapshot
     statMods: { atk: 1, spd: 1 },           // multiplicative modifiers
     stun: 0,                                // turns of skip-action remaining
     burn: 0,                                // counter X

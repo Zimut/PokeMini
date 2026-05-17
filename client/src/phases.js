@@ -3,7 +3,7 @@ import { SPECIES, ITEMS, BERRIES, ZONES, GYM_LEADERS, TRAINERS, RUN, rankFromElo
 import { newRng, buildTeam, simulate, actualStats } from './engine.js';
 import * as S from './state.js';
 import { setPhase, phaseHeader, renderTopbar, renderTeam, renderItems, attachTooltip, SPRITE_URL, abilityTooltip, abilityName, itemTooltip, pokemonCardInnerHTML, itemIcon, TRAINER_SPRITE_URL, setTopbarStep, ITEM_ICON_URL, resetTopbarTrack, rankIcon } from './ui.js';
-import { markTeamAsSeen, markRankedWin, getSeenSet, getWonSet } from './dex.js';
+import { markTeamAsSeen, markRankedWin, getSeenSet, getWonSet, markSeen } from './dex.js';
 import { saveSnapshot, syncSnapshots, snapshotCount, findLocalMatch, getKnownPlayerNames } from './snapshots.js';
 import { t, getLocale, setLocale } from './i18n.js';
 import { refreshServerStatusLabels } from './serverStatus.js';
@@ -97,12 +97,12 @@ function onUseItem(itemId, target) {
   if (idx < 0) return;
   const def = ITEMS[itemId] || BERRIES[itemId];
   if (!def) return;
-  // Berry use on Pokémon — flat +20 (regular) or +5 (small) to the relevant stat.
+  // Berry use on Pokémon — flat +15 (regular) or +5 (small) to the relevant stat.
   // Fixed values are fairer than % scaling, which punished low-stat Pokémon.
   if (BERRIES[itemId] && target.type === 'pokemon') {
     const p = state.team[target.slot]; if (!p || p.inDaycare) return;
     const b = BERRIES[itemId];
-    const BONUS = b.small ? 5 : 20;
+    const BONUS = b.small ? 5 : 15;
     if (b.stat === 'hp')  {
       p.hpBonus += BONUS; p.hpMax += BONUS; p.hp += BONUS;
     }
@@ -129,7 +129,7 @@ function onUseItem(itemId, target) {
     const p = state.team[target.slot]; if (!p || p.inDaycare) return;
     const beforeSpecies = p.speciesId, beforeLevel = p.level;
     p.level += 3; S.checkEvolve(p);
-    const sp = SPECIES[p.speciesId]; const stats = actualStats(sp, p.level);
+    const sp = SPECIES[p.speciesId]; const stats = S.applyShinyMult(actualStats(sp, p.level), p.shiny);
     p.hpMax = stats.hp + p.hpBonus; p.atk = stats.atk + p.atkBonus; p.spd = stats.spd + p.spdBonus;
     p.hp = p.hpMax;
     // Surface what happened above the slot — evolution if it changed species, otherwise just the level bump.
@@ -185,7 +185,7 @@ function onUseItem(itemId, target) {
       ally.level += 1;
       S.checkEvolve(ally);
       const sp = SPECIES[ally.speciesId];
-      const stats = actualStats(sp, ally.level);
+      const stats = S.applyShinyMult(actualStats(sp, ally.level), ally.shiny);
       ally.hpMax = stats.hp + (ally.hpBonus || 0);
       ally.atk   = stats.atk + (ally.atkBonus || 0);
       ally.spd   = stats.spd + (ally.spdBonus || 0);
@@ -721,7 +721,7 @@ function newDaycareReturn() {
   dc.level = Math.min(100, dc.level + RUN.daycareLevels);
   S.checkEvolve(dc);
   const sp = SPECIES[dc.speciesId];
-  const stats = actualStats(sp, dc.level);
+  const stats = S.applyShinyMult(actualStats(sp, dc.level), dc.shiny);
   dc.hpMax = stats.hp + (dc.hpBonus || 0);
   dc.atk = stats.atk + (dc.atkBonus || 0);
   dc.spd = stats.spd + (dc.spdBonus || 0);
@@ -742,7 +742,7 @@ function legacyDaycareReturn() {
   dc.level = Math.min(100, dc.level + RUN.daycareLevels);
   S.checkEvolve(dc);
   const sp = SPECIES[dc.speciesId];
-  const stats = actualStats(sp, dc.level);
+  const stats = S.applyShinyMult(actualStats(sp, dc.level), dc.shiny);
   dc.hpMax = stats.hp + (dc.hpBonus || 0);
   dc.atk = stats.atk + (dc.atkBonus || 0);
   dc.spd = stats.spd + (dc.spdBonus || 0);
@@ -794,19 +794,35 @@ function completeAdventureStep() {
 // to free slots). Lure item re-rolls both, excluding the species already shown.
 function captureLevel() {
   const zone = ZONES[state.zone - 1];
-  const bonus = state.zone === 1 ? 2 : state.zone === 2 ? 1 : 0;
+  const bonus = state.zone === 1 ? 3 : state.zone === 2 ? 1 : 0;
   // scalingStep skips Special steps so the 9-step layout still scales 0..5 within a
   // zone (same pacing as the old 5-step zones, just stretched across more events).
   return zone.min + S.scalingStep(state.advStep) + bonus;
 }
-function rollCaptureStep(excludeIds = []) {
+// Pick a single wild species for one of the two capture slots. Rolls each rare from
+// the zone's `rares` list independently at RUN.rareWildChance; if any hit, a random
+// one of the hitting rares wins. Otherwise picks from the regular pool. excludeIds
+// applies to both rares and pool members so back-to-back picks don't duplicate.
+function pickWildCandidate(excludeIds = []) {
   const zone = ZONES[state.zone - 1];
   const excl = new Set(excludeIds);
+  const rares = (zone.rares || []).filter(id => !excl.has(id));
+  // Independent 1% rolls per rare — collect every rare that hits.
+  const rareHits = rares.filter(() => rng.float() < RUN.rareWildChance);
+  if (rareHits.length > 0) {
+    return rareHits[Math.floor(rng.float() * rareHits.length)];
+  }
+  // Normal pool pick. Fall back to the full pool if exclusion shrunk it to 0.
   let pool = zone.pool.filter(id => !excl.has(id));
-  if (pool.length < 2) pool = zone.pool;          // fallback if exclusion shrunk the pool too far
-  const shuffled = pool.slice().sort(() => rng.float() - 0.5);
-  const idA = shuffled[0];
-  const idB = shuffled.find(id => id !== idA) || shuffled[1] || idA;
+  if (pool.length === 0) pool = zone.pool;
+  return pool[Math.floor(rng.float() * pool.length)];
+}
+function rollCaptureStep(excludeIds = []) {
+  // Pick A respecting the carryover exclusion list (from prior Lure uses). Pick B
+  // adds A to the exclusion list so the two slots are always different species,
+  // whether normal-pool or rare.
+  const idA = pickWildCandidate(excludeIds);
+  const idB = pickWildCandidate([...excludeIds, idA]);
   const lvl = captureLevel();
   return {
     kind: 'capture',
@@ -825,6 +841,11 @@ function showCaptureStep() {
 function renderCaptureStep() {
   const step = state.pendingStep;
   const { wildA, wildB } = step;
+  // Both wilds count as "seen" in the Pokédex the moment they appear on a card —
+  // catching is not required. This is what makes rares show up in the dex even on
+  // a roll the player decided to skip. Idempotent, so re-renders are safe.
+  markSeen(wildA.speciesId);
+  markSeen(wildB.speciesId);
   const hasLure = S.findItem(state, 'lure') >= 0;
   const slotsFree = S.hasItemSlot(state);
   // Each wild option uses the full Pokémon card layout (the same one as the starter
@@ -863,6 +884,35 @@ function renderCaptureStep() {
       else if (key === 'B') catchAndAdvance(state.pendingStep.wildB);
       else if (key === 'skip') skipCaptureForBerries();
     };
+  });
+  // Great Ball drag target — drop the ball from the item bar onto either wild card
+  // to catch that specific Pokémon at +3 levels. Only the Great Ball is accepted;
+  // every other item drop is silently ignored on this surface.
+  ['A', 'B'].forEach(key => {
+    const el = document.querySelector(`.capture-grid .slot.capture-pick[data-key="${key}"]`);
+    if (!el) return;
+    el.addEventListener('dragover', (e) => {
+      const drag = window.__pmDrag;
+      if (drag && drag.type === 'item' && drag.itemId === 'greatBall') {
+        e.preventDefault();
+        el.classList.add('drag-over');
+      }
+    });
+    el.addEventListener('dragleave', () => el.classList.remove('drag-over'));
+    el.addEventListener('drop', (e) => {
+      e.preventDefault();
+      el.classList.remove('drag-over');
+      try {
+        const data = JSON.parse(e.dataTransfer.getData('text/plain'));
+        if (data.type !== 'item' || data.itemId !== 'greatBall') return;
+        const idx = S.findItem(state, 'greatBall');
+        if (idx < 0) return;
+        const wild = key === 'A' ? state.pendingStep.wildA : state.pendingStep.wildB;
+        S.removeItem(state, idx);
+        const upgraded = S.makeInstance(wild.speciesId, wild.level + 3);
+        catchAndAdvance(upgraded);
+      } catch {}
+    });
   });
   if (hasLure) {
     document.querySelector('#btn-capture-lure').onclick = () => {
@@ -1110,7 +1160,7 @@ function eventCardContent(ev) {
       // pool entry if a stale-format cached event makes it here without one (the
       // migration guard above will replace it on the next step anyway).
       const zone = ZONES[state.zone - 1];
-      const bonus = state.zone === 1 ? 2 : state.zone === 2 ? 1 : 0;
+      const bonus = state.zone === 1 ? 3 : state.zone === 2 ? 1 : 0;
       const level = zone.min + S.scalingStep(state.advStep) + bonus;
       const speciesId = ev.species || zone.pool[0];
       const evolvedId = evolvedAt(speciesId, level);
@@ -1237,7 +1287,7 @@ function startBerryEvent() {
     return `<div class="card berry-pick" data-id="${b.id}">
       <div class="berry-pick-info">
         <div class="ctitle">${localizedName}</div>
-        <div class="csub">+20 ${statLabel}</div>
+        <div class="csub">+15 ${statLabel}</div>
       </div>
       ${iconUrl ? `<img src="${iconUrl}" alt="${localizedName}" class="berry-pick-icon" loading="lazy">` : ''}
     </div>`;
@@ -1427,7 +1477,7 @@ function startWildHordeEvent() {
   // routed through scalingStep so the horde matches the player's current bracket
   // rather than the raw advStep (which would over-shoot since horde fires on a
   // Special step — advStep counts those, scalingStep doesn't).
-  const bonus = state.zone === 1 ? 2 : state.zone === 2 ? 1 : 0;
+  const bonus = state.zone === 1 ? 3 : state.zone === 2 ? 1 : 0;
   const baseLevel = zone.min + S.scalingStep(state.advStep) + bonus;
   const speciesId = state.currentEvent.species;
   // Auto-evolve preview species to whatever it'd actually be at fight time.
@@ -1671,6 +1721,7 @@ function runBattle(opponentRoster, opponentLabel, applyResults) {
     hpBonus: p.hpBonus, atkBonus: p.atkBonus, spdBonus: p.spdBonus,
     type1: p.type1, type2: p.type2, abilityOverride: p.ability,
     fainted: !!p.fainted,                    // carry pre-fight fainted state into the battle
+    shiny: !!p.shiny,                        // and the shiny flag (engine applies +15% + alt sprite)
   }));
   // Apply X-Vitamin transient buff
   for (const e of myRoster) {
@@ -1692,6 +1743,7 @@ function runBattle(opponentRoster, opponentLabel, applyResults) {
     hp: u.hp, hpMax: u.hpMax, atk: u.atk, spd: u.spd,
     abilityId: u.abilityId, type1: u.type1, type2: u.type2,
     burn: 0, poison: 0, stun: 0, fainted: u.fainted,
+    shiny: !!u.shiny,                         // for sprite swap during animation
     dmgDealt: 0,                              // running per-unit "damage caused" total — incremented by hit/heal/rest/revive events
   }));
   const animA = snapshot(teamA);
@@ -1776,7 +1828,7 @@ function showBattleAnimation(snapA, snapB, result, opponentLabel, callback) {
         <div class="hpbar-ticks"></div>
       </div>
       <div class="dmg-counter" title="Damage + healing dealt this battle">${dmg > 0 ? dmg : ''}</div>
-      <img src="${SPRITE_URL(u.species.id)}" alt="${u.name}" loading="lazy">
+      <img src="${SPRITE_URL(u.species.id, u.shiny)}" alt="${u.name}" loading="lazy">
     `;
   }
 

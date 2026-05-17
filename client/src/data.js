@@ -211,9 +211,11 @@ export const BERRIES = {
   oran:  { id:'oran',  name:'Oran Berry',  stat:'hp',  amount:8 },
   cheri: { id:'cheri', name:'Cheri Berry', stat:'atk', amount:6 },
   salac: { id:'salac', name:'Salac Berry', stat:'spd', amount:6 },
-  // Small berries — 1/4 of the standard +20 boost. Dropped as a bonus reward when the
-  // player chooses to BATTLE a wild Pokémon (rather than catch), so the player still
-  // gets something for the slot pressure of fighting.
+  // Small berries — 1/3 of the standard +15 boost. Awarded when the player chooses
+  // "Pick small berries" instead of capturing a Pokémon or fighting a trainer; also
+  // the participation drop for adventure trainer battles. The `amount` field below
+  // is informational only — the actual bonus is applied via the BONUS constant in
+  // the use-item handler (see phases.js).
   oranSmall:  { id:'oranSmall',  name:'Small Oran',  stat:'hp',  amount:8, small:true },
   cheriSmall: { id:'cheriSmall', name:'Small Cheri', stat:'atk', amount:6, small:true },
   salacSmall: { id:'salacSmall', name:'Small Salac', stat:'spd', amount:6, small:true },
@@ -226,20 +228,32 @@ export const ZONES = [
   // Pools rebalanced to 9 per zone (Z7 sits at 8) — see docs/GDD.md §6.5 for the per-zone rationale.
   // Starter species (Pikachu, Meowth, Jigglypuff, NidoranF, Eevee) are intentionally NOT wild.
   // Zone scaling = +7 levels per zone (was +8). Gym level shown — wild range is min+1..level-1.
+  //
+  // `rares` is the inverse-zone rare list — each rare has RUN.rareWildChance to replace
+  // a capture-step pool pick. Zones pair up Z1↔Z7, Z2↔Z6, Z3↔Z5. Z4 has no rares (middle
+  // zone with no inverse). Rare picks scale to the zone's normal capture level, so a Z1
+  // rare like Pidgey shows as L5 there, while the Z7 Pidgey rare shows as L43+ (Pidgeot).
   { id:1, name:'Pewter / Mt. Moon', type:'rock',     leader:'Brock',     min:2,  level:7,
-    pool:[16,19,10,13,74,41,46,69,140] },                                  // Pidgey, Rattata, Caterpie, Weedle, Geodude, Zubat, Paras, Bellsprout, Kabuto
+    pool:[16,19,10,13,74,41,46,69,140],                                    // Pidgey, Rattata, Caterpie, Weedle, Geodude, Zubat, Paras, Bellsprout, Kabuto
+    rares:[138, 90, 132] },                                                // Omanyte (fossil), Shellder, Ditto — Mt. Moon cave / fossil flavor
   { id:2, name:'Cerulean / Route 4',type:'water',    leader:'Misty',    min:8,  level:14,
-    pool:[129,54,60,118,23,95,66,27,21] },                                  // Magikarp, Psyduck, Poliwag, Goldeen, Ekans, Onix, Machop, Sandshrew, Spearow
+    pool:[129,54,60,118,23,95,66,27,21],                                    // Magikarp, Psyduck, Poliwag, Goldeen, Ekans, Onix, Machop, Sandshrew, Spearow
+    rares:[79, 113, 108] },                                                 // Slowpoke (water/psychic), Chansey, Lickitung — iconic rare encounters
   { id:3, name:'Vermilion / Power Plant',type:'electric',leader:'Lt. Surge',min:15, level:21,
-    pool:[100,50,84,96,111,37,116,86,63] },                                 // Voltorb, Diglett, Doduo, Drowzee, Rhyhorn, Vulpix, Horsea, Seel, Abra
+    pool:[100,50,84,96,111,37,116,86,63],                                   // Voltorb, Diglett, Doduo, Drowzee, Rhyhorn, Vulpix, Horsea, Seel, Abra
+    rares:[147, 115, 123] },                                                // Dratini, Kangaskhan, Scyther — Safari Zone classics
   { id:4, name:'Celadon / Lavender',type:'grass',    leader:'Erika',    min:22, level:28,
     pool:[114,102,92,43,104,137,58,72,56] },                                // Tangela, Exeggcute, Gastly, Oddish, Cubone, Porygon, Growlithe, Tentacool, Mankey
+                                                                            // Z4 has no rares — middle zone, no inverse pair.
   { id:5, name:'Fuchsia / Safari Zone',type:'poison',leader:'Koga',     min:29, level:35,
-    pool:[88,109,32,128,115,127,123,35,147] },                              // Grimer, Koffing, NidoranM, Tauros, Kangaskhan, Pinsir, Scyther, Clefairy, Dratini
+    pool:[88,109,32,128,115,127,123,35,147],                                // Grimer, Koffing, NidoranM, Tauros, Kangaskhan, Pinsir, Scyther, Clefairy, Dratini
+    rares:[100, 111, 63] },                                                 // Voltorb (→Electrode), Rhyhorn, Abra (→Kadabra/Alakazam) — Power Plant + Safari overlap
   { id:6, name:'Saffron / Dojo',   type:'psychic',   leader:'Sabrina',  min:36, level:42,
-    pool:[122,106,107,124,79,108,113,143,81] },                             // Mr.Mime, Hitmonlee, Hitmonchan, Jynx, Slowpoke, Lickitung, Chansey, Snorlax, Magnemite
+    pool:[122,106,107,124,79,108,113,143,81],                               // Mr.Mime, Hitmonlee, Hitmonchan, Jynx, Slowpoke, Lickitung, Chansey, Snorlax, Magnemite
+    rares:[129, 54, 66] },                                                  // Magikarp (→Gyarados), Psyduck (→Golduck), Machop (→Machoke/Machamp)
   { id:7, name:'Cinnabar / Pokémon Mansion',type:'fire',leader:'Blaine',min:43, level:49,
-    pool:[126,132,138,142,131,98,90,125] },                                 // Magmar, Ditto, Omanyte, Aerodactyl, Lapras, Krabby, Shellder, Electabuzz
+    pool:[126,132,138,142,131,98,90,125],                                   // Magmar, Ditto, Omanyte, Aerodactyl, Lapras, Krabby, Shellder, Electabuzz
+    rares:[16, 74, 69] },                                                   // Pidgey (→Pidgeot), Geodude (→Golem), Bellsprout (→Victreebel) — late-game evolutions of Z1 starters
 ];
 
 // Trainer archetypes per zone. Each entry has a primary `type` (internal), a `sprite` slug
@@ -346,10 +360,23 @@ export const RUN = {
   // New step constants ─────────────────────────────────────────────────
   captureSkipBerryCount: 2,           // small berries dropped when you Skip the capture step
   trainerSkipBerryCount: 2,           // same for the trainer-skip "Pick small berries" option
-  trainerWinLevels: { normal: 2, hard: 3 },  // team-level reward per trainer difficulty
+  trainerWinLevels: { normal: 1, hard: 2 },  // team-level reward per trainer difficulty
   hardTrainerLevelPerZone: 1,         // hard adds +N levels to each enemy, scaled by zone
   hardTrainerExtraPokemon: 1,         // hard trainer brings +1 Pokémon (capped at teamSize=6)
   wildHordeLevels: 1,                 // team-level reward on horde win (was 3)
+  // Capture-step rare-species chance. Each rare in the current zone's `rares` list
+  // independently rolls against this on every wild slot — 3 rares × 1% = ~3% per
+  // slot, ~6% per step. Rare picks always use the same zone-level scaling as a
+  // normal pool pick, so a Z1 rare like Pidgey shows at L5 while a Z7 rare like
+  // Geodude shows at L43+ (Golem). Lowering this number makes rares feel like
+  // genuine surprises; raising it makes them a more reliable progression tool.
+  rareWildChance: 0.01,
+  // Shiny chance — applied on every Pokémon instance the player can OWN (wild
+  // captures, trade offers, starter picks). Trainer rosters never roll shiny.
+  // A shiny is purely cosmetic + a flat +15% boost to base hp/atk/spd (the boost
+  // applies post-actualStats so it follows through level-ups and evolutions).
+  shinyChance: 1 / 500,
+  shinyStatMultiplier: 1.15,
   // Save format version — bumped when the in-flight run shape changes meaningfully.
   // Saves with a lower version are wiped on load so the player gets a clean start
   // rather than crashing on a stale `pendingEvents` shape.

@@ -81,6 +81,7 @@ const teamMemberSchema = {
     type2:           { type: ['string', 'null'], maxLength: 16 },
     abilityOverride: { type: ['string', 'null'], maxLength: 32 },
     fainted:         { type: ['boolean', 'null'] },
+    shiny:           { type: ['boolean', 'null'] },
   },
 };
 

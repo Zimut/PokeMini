@@ -58,6 +58,7 @@ function teamSnapshot(state) {
     speciesId: p.speciesId, level: p.level, slot,
     hpBonus: p.hpBonus, atkBonus: p.atkBonus, spdBonus: p.spdBonus,
     type1: p.type1, type2: p.type2, abilityOverride: p.ability,
+    shiny: !!p.shiny,
   }));
 }
 

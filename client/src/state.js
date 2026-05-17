@@ -82,7 +82,23 @@ export function hasSavedRun() {
   return s && !s.runOver;
 }
 
-// Build a Pokémon instance from species at a given level.
+// Apply the shiny +15% stat boost to a stats object (returns a new object,
+// non-mutating). All recompute call sites — makeInstance, grantTeamExp, evosoda
+// and spiritPendant item handlers, daycare return — wrap their actualStats result
+// with this so a shiny Pokémon's bonus follows through level-ups and evolutions.
+export function applyShinyMult(stats, shiny) {
+  if (!shiny) return stats;
+  const m = RUN.shinyStatMultiplier;
+  return {
+    hp:  Math.round(stats.hp  * m),
+    atk: Math.round(stats.atk * m),
+    spd: Math.round(stats.spd * m),
+  };
+}
+
+// Build a Pokémon instance from species at a given level. Each instance has a
+// 1-in-N chance to be shiny (RUN.shinyChance). Shiny is permanent on the instance
+// and gets the +15% base-stat boost via applyShinyMult anywhere stats are recomputed.
 export function makeInstance(speciesId, level) {
   const sp = SPECIES[speciesId];
   if (!sp) throw new Error('unknown species ' + speciesId);
@@ -94,7 +110,8 @@ export function makeInstance(speciesId, level) {
     curSp = SPECIES[curId];
     if (!curSp) break;
   }
-  const stats = actualStats(curSp, level);
+  const shiny = Math.random() < RUN.shinyChance;
+  const stats = applyShinyMult(actualStats(curSp, level), shiny);
   return {
     speciesId: curId,
     level,
@@ -104,6 +121,7 @@ export function makeInstance(speciesId, level) {
     hpBonus: 0, atkBonus: 0, spdBonus: 0,
     fainted: false,
     xVitamin: false,         // single-battle buff
+    shiny,
   };
 }
 
@@ -142,9 +160,9 @@ export function grantTeamExp(state, levelsEach = 1) {
   for (const p of teamArray(state)) {
     p.level = Math.min(100, p.level + levelsEach);
     checkEvolve(p);
-    // Re-derive stats from new level
+    // Re-derive stats from new level, preserving the shiny +15% if applicable.
     const sp = SPECIES[p.speciesId];
-    const stats = actualStats(sp, p.level);
+    const stats = applyShinyMult(actualStats(sp, p.level), p.shiny);
     const hpRatio = p.hp / p.hpMax;
     p.hpMax = stats.hp + p.hpBonus;
     p.atk = stats.atk + p.atkBonus;
@@ -229,7 +247,11 @@ export function scalingStep(advStep) {
 //   • opts.lure          → all zones combined (Lure item — any Pokémon, current zone level)
 //
 // `opts.level` still overrides everything (used by Trade events for their own +2+advStep curve).
-const WILD_ZONE_BONUS = { 1: 2, 2: 1 };
+// Early-zone level bump applied on top of zone.min + scalingStep. Z1's min is only 2,
+// so without this the very first capture would be Level 2 — bumped to 3 to land that
+// first wild at L5 (gives the starter a slight buffer in the opening fight). Z2 gets
+// a +1 to keep the inter-zone transition smooth.
+const WILD_ZONE_BONUS = { 1: 3, 2: 1 };
 export function rollWild(state, rng, opts = {}) {
   const z = ZONES[state.zone - 1];
   let pool = z.pool;

@@ -40,6 +40,7 @@ function teamToRoster(team) {
         type1: p.type1, type2: p.type2,
         abilityOverride: p.ability,
         fainted: !!p.fainted,
+        shiny: !!p.shiny,
       };
     });
 }
