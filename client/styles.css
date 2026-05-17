@@ -640,10 +640,25 @@ button.primary:hover { background: var(--accent-deep); border-color: var(--accen
 }
 
 .slot-main { display: grid; grid-template-columns: 96px 1fr; gap: 10px; align-items: flex-start; }
-.slot-sprite {
-  width: 96px; height: 96px; image-rendering: auto;
+/* Sprite-wrap is the framed square behind the Pokémon. It owns the size, light
+   blue tint, and rounded corners; the inner <img.slot-sprite> just fills the
+   frame. Wrapped (rather than styled directly on the img) so we can attach a
+   pseudo-element background — e.g. the blurred wild.png in the capture step —
+   without having to modify shared markup for every render site. */
+.slot-sprite-wrap {
+  width: 96px; height: 96px;
   align-self: center;
-  background: rgba(74,163,223,0.06); border-radius: 10px;
+  background: rgba(74,163,223,0.06);
+  border-radius: 10px;
+  position: relative;
+  overflow: hidden;
+}
+.slot-sprite {
+  width: 100%; height: 100%;
+  object-fit: contain;
+  image-rendering: auto;
+  position: relative; z-index: 1;
+  display: block;
 }
 .slot-info { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
 .slot-header { display: flex; justify-content: space-between; align-items: baseline; gap: 6px; }
@@ -775,42 +790,37 @@ button.primary:hover { background: var(--accent-deep); border-color: var(--accen
   background: var(--panel);
   min-height: 200px;
   border-width: 2px;
-  position: relative;
-  overflow: hidden;
 }
 .slot.capture-pick:hover {
   border-color: var(--accent);
+  background: #e8f2fa;
   transform: translateY(-3px);
   box-shadow: 0 6px 16px rgba(45,127,184,0.15);
 }
-/* Wild backdrop — the wild.png event art sits behind the Pokémon card, heavily
-   blurred and lightly tinted so it reads as atmosphere rather than illustration.
-   Two pseudo-elements: ::before holds the blurred image; ::after holds a white
-   overlay for foreground contrast (same trick as the existing event-card.is-wild
-   uses, but adapted to the slot card layout). Real content sits at z-index 1. */
-.slot.capture-pick.is-wild-bg::before {
+/* Wild backdrop on JUST the sprite frame — replaces the default light-blue tint
+   with the wild.png event art, heavily blurred so it reads as atmosphere rather
+   than illustration. The blur uses transform:scale(1.2) to push the soft edges
+   outside the wrapper's rounded clip, and a translucent white overlay (::after)
+   keeps the Pokémon sprite readable on top. */
+.slot.capture-pick .slot-sprite-wrap { background: transparent; }
+.slot.capture-pick .slot-sprite-wrap::before {
   content: '';
   position: absolute; inset: 0;
   background-image: url('assets/events/wild.png');
   background-size: cover;
   background-position: center;
-  filter: blur(8px) saturate(1.1);
-  /* transform scale prevents the blur from showing soft edges along the card border */
-  transform: scale(1.1);
+  filter: blur(4px) saturate(1.1);
+  transform: scale(1.2);
   z-index: 0;
   pointer-events: none;
 }
-.slot.capture-pick.is-wild-bg::after {
+.slot.capture-pick .slot-sprite-wrap::after {
   content: '';
   position: absolute; inset: 0;
-  background: rgba(255, 255, 255, 0.55);
+  background: rgba(255, 255, 255, 0.35);
   z-index: 0;
   pointer-events: none;
-  transition: background 0.2s ease;
 }
-.slot.capture-pick.is-wild-bg:hover::after { background: rgba(232, 242, 250, 0.45); }
-/* Lift the actual card content above both pseudo layers. */
-.slot.capture-pick > * { position: relative; z-index: 1; }
 
 /* Skip card — uses the standard event-card layout. Bump min-height so it lines up
    with the wild slots' 200px footprint in the same grid row. */

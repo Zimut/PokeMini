@@ -804,7 +804,7 @@ function renderCaptureStep() {
   // a glance before deciding. The skip card matches the slot's footprint with a
   // berry icon + reward summary; disabled state grays it out when item slots are full.
   const wildSlotHtml = (p, key) => `
-    <div class="slot capture-pick is-wild-bg" data-key="${key}">
+    <div class="slot capture-pick" data-key="${key}">
       ${pokemonCardInnerHTML(p)}
     </div>`;
   const skipBody = slotsFree
