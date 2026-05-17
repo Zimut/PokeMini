@@ -9,6 +9,9 @@
 
 const en = {
   // ─── Main menu ────────────────────────────────────────────────────────
+  'menu.play':   'Play',
+  // menu.ranked / menu.single retained as dormant keys in case a future build
+  // reintroduces mode selection — referenced by nothing in the current code.
   'menu.ranked': 'Ranked Match',
   'menu.single': 'Single Player',
   'menu.elo': 'ELO',
@@ -200,7 +203,7 @@ const en = {
   'item.revive.name':        'Revive',
   'item.xVitamin.name':      'X-Vitamin',
   'item.greatBall.name':     'Great Ball',
-  'item.evosoda.name':       'Evosoda',
+  'item.evosoda.name':       'Rare Candy',
   'item.tm.name':            'TM',
   'item.hm.name':            'HM',
   'item.lure.name':          'Lure',
@@ -214,7 +217,7 @@ const en = {
   'item.evosoda.desc':       'Target Pokémon gains 3 levels.',
   'item.tm.desc':            'Reroll the secondary type of a Pokémon. Mono → adds; dual → rerolls.',
   'item.hm.desc':            "Reroll the Pokémon's ability (same evolutionary tier).",
-  'item.lure.desc':          'During Wild Encounter: swap to a random Pokémon.',
+  'item.lure.desc':          'During the capture step, re-roll both wild Pokémon — picks come from any zone, excluding the species currently shown.',
   'item.spiritPendant.desc': 'Release a Pokémon; both adjacent team members gain +1 level.',
 
   // ─── Berry names ─────────────────────────────────────────────────────
@@ -267,6 +270,7 @@ const en = {
 
 const ptBR = {
   // ─── Main menu ────────────────────────────────────────────────────────
+  'menu.play':   'Jogar',
   'menu.ranked': 'Partida Ranqueada',
   'menu.single': 'Um Jogador',
   'menu.elo': 'ELO',
@@ -458,7 +462,7 @@ const ptBR = {
   'item.revive.name':        'Reviver',
   'item.xVitamin.name':      'X-Vitamina',
   'item.greatBall.name':     'Great Ball',
-  'item.evosoda.name':       'Refri Evolutivo',
+  'item.evosoda.name':       'Doce Raro',
   'item.tm.name':            'TM',
   'item.hm.name':            'HM',
   'item.lure.name':          'Isca',
@@ -472,7 +476,7 @@ const ptBR = {
   'item.evosoda.desc':       'O Pokémon alvo ganha 3 níveis.',
   'item.tm.desc':            'Re-sorteia o tipo secundário do Pokémon. Mono → adiciona; dual → troca.',
   'item.hm.desc':            'Re-sorteia a habilidade do Pokémon (mesma fase evolutiva).',
-  'item.lure.desc':          'Durante um Encontro Selvagem: troca por um Pokémon aleatório.',
+  'item.lure.desc':          'Na etapa de captura, re-sorteia ambos os Pokémon selvagens — escolhas vêm de qualquer zona, excluindo as espécies já mostradas.',
   'item.spiritPendant.desc': 'Libera um Pokémon; ambos os aliados adjacentes ganham +1 nível.',
 
   // ─── Berry names ─────────────────────────────────────────────────────

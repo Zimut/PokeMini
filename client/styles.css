@@ -612,6 +612,25 @@ button.primary:hover { background: var(--accent-deep); border-color: var(--accen
   transform: scale(1.1);
 }
 .slot.drag-over { border-style: solid; border-color: var(--accent); background: #e0eef8; }
+/* X-Vitamin badge — sits in the top-left corner of a team slot while the buff is
+   queued. Clears automatically when the Pokémon enters battle and the engine
+   consumes p.xVitamin. Reuses the x-attack item icon for visual identity. */
+.slot-vitamin-badge {
+  position: absolute;
+  top: 4px; left: 4px;
+  width: 28px; height: 28px;
+  z-index: 3;
+  pointer-events: none;
+  background: rgba(255, 255, 255, 0.85);
+  border-radius: 6px;
+  padding: 2px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.18);
+}
+.slot-vitamin-badge img {
+  width: 100%; height: 100%;
+  image-rendering: pixelated;
+  display: block;
+}
 .slot.empty {
   opacity: 0.5; cursor: default; min-height: 160px;
   display: flex; align-items: center; justify-content: center; border-style: dashed;
@@ -978,11 +997,17 @@ button.primary:hover { background: var(--accent-deep); border-color: var(--accen
   object-fit: contain; flex-shrink: 0;
 }
 .card.event-card.is-trainer .trainer-preview {
-  flex-wrap: nowrap; gap: 4px; flex-shrink: 1;
+  /* Wraps to a 3-per-row grid: up to size 3 fits on one row, 4–6 sprites
+     break into a 2nd row of up to 3 more. Sprite size dropped from 64→48
+     so two rows occupy roughly the same vertical space as the old single
+     row of 64s, keeping the card footprint stable. */
+  flex-wrap: wrap; gap: 3px; flex-shrink: 1;
+  max-width: 162px;                  /* 3 × (48 + 2px pad) + 2 × 3 gap = ~156, +slack */
+  justify-content: center;
 }
 .card.event-card.is-trainer .trainer-preview-sprite {
-  width: 64px; height: 64px;
-  padding: 2px;
+  width: 48px; height: 48px;
+  padding: 1px;
 }
 .card.event-card.is-trainer .card-image::after {
   content: ''; position: absolute; inset: 0;
@@ -1538,6 +1563,14 @@ button.primary:hover { background: var(--accent-deep); border-color: var(--accen
 
 /* Re-use the ELO block on the defeat screen — sized to fit. */
 .defeat-screen .result-elo-block { margin-top: 4px; }
+/* Title-screen rank bar — same component as the end-of-run progress bar, but
+   sized down a touch and pulled in slightly so it sits naturally below the
+   player name + rank chip without dominating the menu layout. */
+.start-player-info .menu-rank-progress {
+  width: min(340px, 92%);
+  margin: 10px auto 0;
+  gap: 6px;
+}
 
 /* ─── Battle arena (vertical layout, compact) ─────────────────────────── */
 .battle-arena {

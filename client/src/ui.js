@@ -363,7 +363,7 @@ const ITEM_DESC = {
   evosoda: 'Target Pokémon gains 3 levels.',
   tm: 'Reroll the secondary type of a Pokémon. Mono → adds; dual → rerolls.',
   hm: 'Reroll the Pokémon\'s ability (same evolutionary tier).',
-  lure: 'During Wild Encounter: swap to a random Pokémon.',
+  lure: 'During the capture step, re-roll both wild Pokémon — picks come from any zone, excluding the species currently shown.',
   spiritPendant: 'Release a Pokémon; both adjacent team members gain +1 level.',
 };
 
@@ -610,7 +610,14 @@ export function pokemonCardInnerHTML(p) {
   const hpClass = hp / hpMax < 0.3 ? ' hp-low' : '';
   const hpLabel = (hp === hpMax) ? `${hpMax}` : `${hp}/${hpMax}`;
   const abilityId = p.ability || sp.ability;
+  // X-Vitamin badge — appears top-left of the slot card while p.xVitamin is true
+  // (set by the item, cleared by runBattle when the buff is consumed). Reuses the
+  // PokéAPI x-attack item icon since that's the item's chosen visual identity.
+  const xVitaminBadge = p.xVitamin
+    ? `<div class="slot-vitamin-badge" title="X-Vitamin active — next battle"><img src="${ITEM_ICON_URL('x-attack')}" alt="X-Vitamin"></div>`
+    : '';
   return `
+    ${xVitaminBadge}
     <div class="slot-main">
       <div class="slot-sprite-wrap${p.shiny ? ' shiny' : ''}"><img class="slot-sprite${p.shiny ? ' shiny' : ''}" src="${SPRITE_URL(sp.id, p.shiny)}" alt="${sp.name}" loading="lazy"></div>
       <div class="slot-info">

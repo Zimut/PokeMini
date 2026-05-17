@@ -2,7 +2,7 @@
 import { SPECIES, ZONES, RUN, TYPES, ITEMS, BERRIES } from './data.js';
 import { actualStats } from './engine.js';
 
-export function newRun({ mode = 'singleplayer', playerName = 'Player', elo = 0, seed = Date.now() } = {}) {
+export function newRun({ mode = 'ranked', playerName = 'Player', elo = 0, seed = Date.now() } = {}) {
   return {
     mode, playerName, elo, seed,
     formatVersion: RUN.saveFormatVersion,

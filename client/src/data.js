@@ -196,15 +196,17 @@ export function speciesByName(name) {
 // ─── Items ────────────────────────────────────────────────────────────────
 // Revive was retired alongside the "teams always heal after every battle" change —
 // nothing ever stays fainted between fights now, so the item had no use case.
+// The `evosoda` id is kept for save compatibility; the display name was rebranded
+// to "Rare Candy" — see i18n.js (`item.evosoda.name`) and the ui.js fallback.
 export const ITEMS = {
-  tradeCard:  { id:'tradeCard', name:'Trade Card', cost:250, target:'tradeEvent' },
+  tradeCard:  { id:'tradeCard', name:'Trade Card', cost:200, target:'tradeEvent' },
   xVitamin:   { id:'xVitamin',  name:'X-Vitamin',  cost:300, target:'pokemon' },
-  greatBall:  { id:'greatBall', name:'Great Ball', cost:400, target:'wildEvent' },
-  evosoda:    { id:'evosoda',   name:'Evosoda',    cost:500, target:'pokemon' },
+  greatBall:  { id:'greatBall', name:'Great Ball', cost:300, target:'wildEvent' },
+  evosoda:    { id:'evosoda',   name:'Rare Candy', cost:500, target:'pokemon' },
   tm:         { id:'tm',        name:'TM',         cost:600, target:'pokemon' },
   hm:         { id:'hm',        name:'HM',         cost:600, target:'pokemon' },
-  lure:       { id:'lure',      name:'Lure',       cost:600, target:'wildEvent' },
-  spiritPendant: { id:'spiritPendant', name:'Spirit Pendant', cost:400, target:'pokemon' },
+  lure:       { id:'lure',      name:'Lure',       cost:300, target:'wildEvent' },
+  spiritPendant: { id:'spiritPendant', name:'Spirit Pendant', cost:300, target:'pokemon' },
 };
 
 export const BERRIES = {
@@ -257,65 +259,70 @@ export const ZONES = [
 ];
 
 // Trainer archetypes per zone. Each entry has a primary `type` (internal), a `sprite` slug
-// (Pokémon Showdown trainer image filename — modern art where available), a Pokémon pool, and
-// a roster `size`. Sizes scale with zone: Z1=2, Z2=3, Z3=4, Z4+=5. Pools always contain at
-// least `size` species so the slice in startTrainerBattle pulls a full team.
-// Each zone has at least 5 distinct trainer archetypes; an in-run "seen" list (state.seenTrainers)
+// (Pokémon Showdown trainer image filename — modern art where available), a Pokémon pool,
+// and a roster `size`.
+//
+// Sizes scale with zone: Z1=2, Z2=3, Z3=4, Z4+ capped at 5. Hard trainers add +1 Pokémon
+// up to a hard cap of 6 (RUN.hardTrainerExtraPokemon, RUN.teamSize). Pools include enough
+// entries for the hard variant (size+1) so the extra slot gets a distinct Pokémon rather
+// than a duplicate of the last entry.
+//
+// Pool order = placement order via TRAINER_LAYOUTS in phases.js. Index 0 lands in the
+// most "front" slot of the layout, last index in the most "back" slot. Adding the hard
+// extra at the end appends to the next slot in the layout — for size 5→6 that's B3, and
+// for earlier zones the layout reshuffles slightly (size 3→4 swaps B2 to B1).
+//
+// Each zone has 5 distinct trainer archetypes; an in-run "seen" list (state.seenTrainers)
 // guarantees no repeat encounters until the player advances to the next zone.
-// Pool order = placement order — see startTrainerBattle's TRAINER_LAYOUTS for the
-// per-size slot mapping. First entry is the most "front" Pokémon (tank), last is back.
-// Rationale per slot: tank front to absorb hits; damage dealers behind same-col tanks;
-// turn-based passives in back where they survive long enough to fire; adjacency abilities
-// (tailwind/healer/helpingHand) placed so the buff lands on an actual ally.
 export const TRAINERS = {
-  1: [ // Layout [F2, B2]
-    { name:'Youngster',   type:'normal', sprite:'youngster',     pool:[16, 19],         size:2 }, // Pidgey (tank w/ tailwind), Rattata (back damage)
-    { name:'Bug Catcher', type:'bug',    sprite:'bugcatcher',    pool:[10, 13],         size:2 }, // Caterpie (shedSkin), Weedle (poison contact)
-    { name:'Lass',        type:'normal', sprite:'lass',          pool:[16, 37],         size:2 }, // Jigglypuff (115 HP tank), Vulpix (back willOWisp)
-    { name:'Hiker',       type:'rock',   sprite:'hiker',         pool:[74, 74],         size:2 }, // Geodude, Geodude
-    { name:'Camper',      type:'normal', sprite:'camper',        pool:[46, 21],         size:2 }, // Paras (tank w/ stun spores), Spearow (back sniper)
+  1: [ // Layout [F2, B2], hard adds F1
+    { name:'Youngster',   type:'normal', sprite:'youngster',     pool:[16, 19, 19],            size:2 }, // Pidgey (tank w/ tailwind), Rattata (back damage), Rattata (hard front)
+    { name:'Bug Catcher', type:'bug',    sprite:'bugcatcher',    pool:[10, 13, 10],            size:2 }, // Caterpie (shedSkin), Weedle (poison contact), Caterpie (hard front)
+    { name:'Lass',        type:'normal', sprite:'lass',          pool:[16, 37, 35],            size:2 }, // Pidgey, Vulpix (willOWisp), Clefairy (hard healer)
+    { name:'Hiker',       type:'rock',   sprite:'hiker',         pool:[74, 74, 74],            size:2 }, // Geodude × 3 (hard variant)
+    { name:'Camper',      type:'normal', sprite:'camper',        pool:[46, 21, 19],            size:2 }, // Paras (effectSpore), Spearow (back sniper), Rattata (hard front)
   ],
-  2: [ // Layout [F2, B2]
-    { name:'Swimmer',     type:'water',  sprite:'swimmer-gen1',  pool:[118, 60],        size:2 }, // Goldeen (predatorsMark front), Poliwag (back waterVeil)
-    { name:'Fisherman',   type:'water',  sprite:'fisherman',     pool:[129, 129],       size:2 }, // Magikarp, Magikarp
-    { name:'Hiker',       type:'rock',   sprite:'hiker',         pool:[95, 74],         size:2 }, // Onix (160 HP tank), Geodude (back rocky helmet)
-    { name:'Bird Keeper', type:'flying', sprite:'birdkeeper',    pool:[16, 21],         size:2 }, // Pidgey (front tailwind), Spearow (back sniper)
-    { name:'Lass',        type:'normal', sprite:'lass',          pool:[35, 43],         size:2 }, // Clefairy (healer front), Oddish (back SPD ramp)
+  2: [ // Layout [F1, F2, B2], hard adds B1
+    { name:'Swimmer',     type:'water',  sprite:'swimmer-gen1',  pool:[118, 60, 72, 116],      size:3 }, // Goldeen (predatorsMark), Poliwag (waterVeil), Tentacool (toxicSweat), Horsea (hard toxicSpike)
+    { name:'Fisherman',   type:'water',  sprite:'fisherman',     pool:[129, 129, 129, 129],    size:3 }, // Magikarp × 4 (swarm gag — intimidate stacks)
+    { name:'Hiker',       type:'rock',   sprite:'hiker',         pool:[95, 74, 27, 74],        size:3 }, // Onix (rockHead tank), Geodude (rockyHelmet), Sandshrew (sandVeil), Geodude (hard rockyHelmet)
+    { name:'Bird Keeper', type:'flying', sprite:'birdkeeper',    pool:[16, 21, 21, 16],        size:3 }, // Pidgey (tailwind), Spearow (sniper), Spearow (back sniper), Pidgey (hard tailwind)
+    { name:'Lass',        type:'normal', sprite:'lass',          pool:[35, 43, 69, 46],        size:3 }, // Clefairy (healer), Oddish (chlorophyll), Bellsprout (photosynthesis), Paras (hard effectSpore)
   ],
-  3: [ // Layout [F1, F2, B2]
-    { name:'Sailor',      type:'fighting', sprite:'sailor',      pool:[72, 118, 98],    size:3 }, // Tentacool (passive poison front), Goldeen (predatorsMark mid), Krabby (back guillotine)
-    { name:'Engineer',    type:'electric', sprite:'engineer-gen1', pool:[29, 81, 81],   size:3 }, // NidoranF (stamina regen tank), Magnemite (magnetPull), Magnemite (back)
-    { name:'Rocker',      type:'electric', sprite:'rocker-gen1', pool:[100, 100, 100],  size:3 }, // Voltorb × 3
-    { name:'Bird Keeper', type:'flying',   sprite:'birdkeeper',  pool:[22, 17, 84],     size:3 }, // Fearow (sniper tank), Pidgeotto (F2 tailwind buffs F1 Fearow), Doduo (back earlyBird)
-    { name:'Gambler',     type:'electric', sprite:'gambler-gen1',pool:[96, 25, 100],    size:3 }, // Drowzee (hypnosis tank), Pikachu (mid static), Voltorb (back rollout)
+  3: [ // Layout [F1, F2, B1, B2], hard adds F3 (and shifts pool[2/3] from B1/B2 to F3/B1)
+    { name:'Sailor',      type:'fighting', sprite:'sailor',      pool:[72, 118, 98, 60, 116],  size:4 }, // Tentacool, Goldeen, Krabby (guillotine), Poliwag (waterVeil), Horsea (hard toxicSpike)
+    { name:'Engineer',    type:'electric', sprite:'engineer-gen1', pool:[29, 81, 81, 81, 100], size:4 }, // NidoranF (stamina), Magnemite (magnetPull), Magnemite, Magnemite, Voltorb (hard rollout)
+    { name:'Rocker',      type:'electric', sprite:'rocker-gen1', pool:[100, 100, 100, 100, 25], size:4 }, // Voltorb × 4 (rollout swarm), Pikachu (hard static)
+    { name:'Bird Keeper', type:'flying',   sprite:'birdkeeper',  pool:[22, 17, 84, 21, 16],    size:4 }, // Fearow (sniper), Pidgeotto (tailwind), Doduo (earlyBird), Spearow (back sniper), Pidgey (hard tailwind)
+    { name:'Gambler',     type:'electric', sprite:'gambler-gen1',pool:[96, 25, 100, 96, 81],   size:4 }, // Drowzee (hypnosis), Pikachu (static), Voltorb (rollout), Drowzee, Magnemite (hard magnetPull)
   ],
-  4: [ // Layout [F1, F2, B2]
-    { name:'Beauty',      type:'grass',  sprite:'beauty',        pool:[114, 69, 43],    size:3 }, // Tangela (100 ATK front, constrict slow), Bellsprout (gluttony heal), Oddish (back SPD ramp)
-    { name:'Channeler',   type:'ghost',  sprite:'channeler-gen1',pool:[93, 93, 93],     size:3 }, // Haunter × 3
-    { name:'Pokémaniac',  type:'ground', sprite:'pokemaniac-gen1',pool:[79, 104, 108],  size:3 }, // Slowpoke (90 HP yawn tank), Cubone (battleArmor row aura at F2), Lickitung (back cloudNine stun)
-    { name:'Burglar',     type:'fire',   sprite:'burglar-gen1',  pool:[58, 37, 52],     size:3 }, // Growlithe (65 HP moxie tank), Vulpix (mid willOWisp), Meowth (back pickup)
-    { name:'Hiker',       type:'rock',   sprite:'hiker',         pool:[95, 74, 27],     size:3 }, // Onix (mega tank), Geodude (mid rocky helmet), Sandshrew (back sandVeil)
+  4: [ // Layout [F1, F2, F3, B1, B2], hard adds B3
+    { name:'Beauty',      type:'grass',  sprite:'beauty',        pool:[114, 69, 43, 102, 46, 69],   size:5 }, // Tangela (constrict), Bellsprout (photosynthesis), Oddish (chlorophyll), Exeggcute (sunbeam), Paras (effectSpore), Bellsprout (hard photosynthesis)
+    { name:'Channeler',   type:'ghost',  sprite:'channeler-gen1',pool:[93, 93, 93, 92, 92, 92],     size:5 }, // Haunter × 3 front, Gastly × 3 back (hex synergies via stacked statuses)
+    { name:'Pokémaniac',  type:'ground', sprite:'pokemaniac-gen1',pool:[79, 104, 108, 79, 104, 50], size:5 }, // Slowpoke, Cubone (battleArmor), Lickitung (cloudNine), Slowpoke (back yawn), Cubone, Diglett (hard arenaTrap)
+    { name:'Burglar',     type:'fire',   sprite:'burglar-gen1',  pool:[58, 37, 52, 58, 37, 52],     size:5 }, // Growlithe (moxie), Vulpix (willOWisp), Meowth (pickup), back trio of the same — doubled pressure
+    { name:'Hiker',       type:'rock',   sprite:'hiker',         pool:[95, 74, 111, 74, 27, 74],    size:5 }, // Onix (tank), Geodude (rockyHelmet), Rhyhorn (boulderRoll), Geodude (back), Sandshrew (sandVeil), Geodude (hard)
   ],
-  5: [ // Layout [F1, F2, B1, B2]
-    { name:'Rocket Grunt',type:'poison',   sprite:'teamrocket',  pool:[88, 23, 109, 41], size:4 }, // Grimer (80 HP pungentAura taunt), Ekans→Arbok (coil), Koffing→Weezing (back aftermath), Zubat→Golbat (back echolocation)
-    { name:'Juggler',     type:'psychic',  sprite:'juggler-gen1',pool:[113, 40, 97, 122], size:4 }, // Chansey (250 HP naturalCure), Wigglytuff (140 HP lullaby), Hypno (back hypnosis), Mr.Mime (back mimic)
-    { name:'Tamer',       type:'normal',   sprite:'tamer-gen1',  pool:[115, 128, 28, 53], size:4 }, // Kangaskhan (105 HP parental bond), Tauros (105 HP trample), Sandslash (back sandVeil), Persian (back fast atk)
-    { name:'Black Belt',  type:'fighting', sprite:'blackbelt',   pool:[66, 106, 56, 107], size:4 }, // Machop→Machoke (crit), Hitmonlee (limber back-row hunter), Mankey→Primeape (back vitalSpirit), Hitmonchan (back ironFist)
-    { name:'Bird Keeper', type:'flying',   sprite:'birdkeeper',  pool:[17, 84, 22, 41],   size:4 }, // Pidgeotto (F1 tailwind buffs F2 Dodrio), Doduo→Dodrio (front earlyBird), Spearow→Fearow (back sniper), Zubat→Golbat (back echolocation)
+  5: [ // Layout [F1, F2, F3, B1, B2], hard adds B3
+    { name:'Rocket Grunt',type:'poison',   sprite:'teamrocket',  pool:[88, 23, 109, 41, 88, 32],    size:5 }, // Grimer (pungentAura), Ekans→Arbok (coil), Koffing→Weezing (aftermath), Zubat→Golbat (echolocation), Grimer (back pungent), NidoranM→Nidorino (hard rivalry)
+    { name:'Juggler',     type:'psychic',  sprite:'juggler-gen1',pool:[113, 40, 97, 122, 122, 124], size:5 }, // Chansey (naturalCure tank), Wigglytuff (lullaby), Hypno (hypnosis), Mr.Mime × 2 (mimic), Jynx (hard disrupt)
+    { name:'Tamer',       type:'normal',   sprite:'tamer-gen1',  pool:[115, 128, 53, 28, 28, 128],  size:5 }, // Kangaskhan (parentalBond), Tauros (trample), Persian (pickup fast), Sandslash × 2 (sandVeil), Tauros (hard trample)
+    { name:'Black Belt',  type:'fighting', sprite:'blackbelt',   pool:[66, 106, 107, 56, 66, 56],   size:5 }, // Machop→Machoke (crossChop), Hitmonlee (limber), Hitmonchan (ironFist), Mankey→Primeape (vitalSpirit), Machoke (back), Primeape (hard back)
+    { name:'Bird Keeper', type:'flying',   sprite:'birdkeeper',  pool:[17, 84, 21, 21, 41, 16],     size:5 }, // Pidgeotto (tailwind), Doduo→Dodrio (earlyBird), Spearow→Fearow (sniper), Spearow (back sniper), Zubat→Golbat (echolocation), Pidgey (hard)
   ],
-  6: [ // Layout [F1, F2, B1, B2]
-    { name:'Psychic',     type:'psychic',  sprite:'psychic',     pool:[79, 96, 63, 122],  size:4 }, // Slowpoke→Slowbro (110 HP yawn), Drowzee→Hypno (90 HP stun), Abra→Alakazam (back magicGuard), Mr.Mime (back mimic)
-    { name:'Black Belt',  type:'fighting', sprite:'blackbelt',   pool:[67, 56, 106, 107], size:4 }, // Machoke→Machamp (crit tank), Mankey→Primeape (vitalSpirit), Hitmonlee (back-row hunter), Hitmonchan (back ironFist)
-    { name:'Juggler',     type:'psychic',  sprite:'juggler-gen1',pool:[124, 96, 122, 100], size:4 }, // Jynx (95 HP disrupt), Drowzee→Hypno (90 HP stun), Mr.Mime (back mimic), Voltorb→Electrode (back rollout)
-    { name:'Cooltrainer', type:'fighting', sprite:'acetrainer',  pool:[80, 68, 65, 124],  size:4 }, // Slowbro (110 HP yawn), Machamp (100 HP crit), Alakazam (back magicGuard), Jynx (back disrupt)
-    { name:'Beauty',      type:'psychic',  sprite:'beauty',      pool:[80, 36, 124, 122], size:4 }, // Slowbro (110 HP tank), Clefable (F2 healer reaches F1 Slowbro), Jynx (back disrupt), Mr.Mime (back mimic)
+  6: [ // Layout [F1, F2, F3, B1, B2], hard adds B3
+    { name:'Psychic',     type:'psychic',  sprite:'psychic',     pool:[79, 96, 122, 63, 122, 96],   size:5 }, // Slowpoke→Slowbro (yawn), Drowzee→Hypno (hypnosis), Mr.Mime (mimic front), Abra→Alakazam (magicGuard), Mr.Mime (back), Hypno (hard)
+    { name:'Black Belt',  type:'fighting', sprite:'blackbelt',   pool:[67, 56, 107, 106, 107, 66],  size:5 }, // Machoke→Machamp, Mankey→Primeape (vitalSpirit), Hitmonchan (ironFist), Hitmonlee (limber), Hitmonchan (back), Machop→Machoke (hard)
+    { name:'Juggler',     type:'psychic',  sprite:'juggler-gen1',pool:[124, 96, 122, 100, 96, 122], size:5 }, // Jynx (disrupt), Hypno (hypnosis), Mr.Mime (mimic), Voltorb→Electrode (rollout), Hypno (back), Mr.Mime (hard)
+    { name:'Cooltrainer', type:'fighting', sprite:'acetrainer',  pool:[80, 68, 124, 65, 97, 124],   size:5 }, // Slowbro (yawn), Machamp (crossChop), Jynx (disrupt front), Alakazam (magicGuard back), Hypno (back), Jynx (hard)
+    { name:'Beauty',      type:'psychic',  sprite:'beauty',      pool:[80, 36, 40, 124, 122, 36],   size:5 }, // Slowbro, Clefable (healer reaches Slowbro), Wigglytuff (lullaby), Jynx (back disrupt), Mr.Mime (back), Clefable (hard)
   ],
-  7: [ // Layout [F1, F2, B1, B2]
-    { name:'Burglar',     type:'fire',     sprite:'burglar-gen1',pool:[58, 126, 37, 52],  size:4 }, // Growlithe→Arcanine (100 HP moxie), Magmar (75 HP flameBody contact), Vulpix→Ninetales (back willOWisp), Meowth→Persian (back fast)
-    { name:'Super Nerd',  type:'normal',   sprite:'scientist',   pool:[126, 132, 137, 100], size:4 }, // Magmar (flameBody front), Ditto (F2 imposter copies Magmar), Porygon (back column explosion), Voltorb→Electrode (back rollout)
-    { name:'Bird Keeper', type:'flying',   sprite:'birdkeeper',  pool:[142, 18, 21, 84],  size:4 }, // Aerodactyl (80 HP skyHigh tank), Pidgeot (83 HP tailwind buffs F1 Aero), Spearow→Fearow (back sniper), Doduo→Dodrio (back earlyBird)
-    { name:'Cooltrainer', type:'fire',     sprite:'acetrainer',  pool:[143, 59, 6, 38],   size:4 }, // Snorlax (160 HP thickFat), Arcanine (100 HP moxie), Charizard (back blaze), Ninetales (back willOWisp)
-    { name:'Gambler',     type:'fire',     sprite:'gambler-gen1',pool:[58, 132, 137, 38], size:4 }, // Growlithe→Arcanine (front), Ditto (F2 imposter copies Arcanine), Porygon (back explosion), Ninetales (back burn)
+  7: [ // Layout [F1, F2, F3, B1, B2], hard adds B3
+    { name:'Burglar',     type:'fire',     sprite:'burglar-gen1',pool:[58, 126, 126, 37, 52, 37],   size:5 }, // Growlithe→Arcanine (moxie), Magmar (flameBody), Magmar (front damage), Vulpix→Ninetales (willOWisp), Meowth→Persian (pickup), Vulpix→Ninetales (hard)
+    { name:'Super Nerd',  type:'normal',   sprite:'scientist',   pool:[126, 132, 137, 100, 126, 100], size:5 }, // Magmar (flameBody), Ditto (imposter copies Magmar), Porygon (explosion), Voltorb→Electrode (rollout), Magmar (back), Electrode (hard)
+    { name:'Bird Keeper', type:'flying',   sprite:'birdkeeper',  pool:[142, 18, 84, 21, 41, 16],    size:5 }, // Aerodactyl (skyHigh), Pidgeot (tailwind), Doduo→Dodrio (earlyBird), Spearow→Fearow (sniper), Zubat→Golbat (echolocation), Pidgey→Pidgeot (hard)
+    { name:'Cooltrainer', type:'fire',     sprite:'acetrainer',  pool:[143, 59, 6, 38, 126, 128],   size:5 }, // Snorlax (bodySlam), Arcanine (moxie), Charizard (blaze), Ninetales (willOWisp back), Magmar (back), Tauros (hard trample)
+    { name:'Gambler',     type:'fire',     sprite:'gambler-gen1',pool:[58, 132, 137, 38, 125, 126], size:5 }, // Growlithe→Arcanine, Ditto (imposter), Porygon (explosion), Ninetales (back), Electabuzz (discharge), Magmar (hard)
   ],
 };
 

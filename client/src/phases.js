@@ -82,6 +82,18 @@ function repaint() {
   // signal, so co-locating the save here covers every mutating action by construction.
   if (state) save();
   flushTeamPopups();
+  // Re-render the active adventure step (capture / trainer / special) so its cards
+  // pick up freshly-changed state. Specifically: using a Berry from the item bar
+  // frees an inventory slot, which should re-enable the "Pick small berries" skip
+  // card and the Lost-Stash special pick. Without this, those stayed visually
+  // disabled until a manual page refresh.
+  //
+  // Deliberately NOT triggered on state.phase === 'event' (mid-trade, mid-daycare,
+  // mid-berry-pick), since those screens have their own internal interaction state
+  // a re-render would clobber (drag in progress, current selection, etc.).
+  if (state && state.phase === 'adventure') {
+    showAdventureStep();
+  }
 }
 
 function onSwap(fromSlot, toSlot) {
@@ -453,6 +465,22 @@ export function showTitle() {
   const r = rankFromElo(elo);
   const ROMAN = ['', 'I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X'];
   const rankSub = ROMAN[r.sub] || String(r.sub);
+  // Static rank progress bar — same visual as the end-of-run screen's ELO block but
+  // without the delta indicator (no battle just happened). Shows the player's progress
+  // within their current 200-point sub-rank band. Reuses .result-elo-* CSS classes;
+  // .menu-rank-progress adds spacing / sizing tweaks for the title context.
+  const subBandPct = Math.max(0, Math.min(100, ((elo % 200) / 200) * 100));
+  const rankBarHtml = `
+    <div class="result-elo-block menu-rank-progress">
+      <div class="result-elo-bar">
+        <div class="result-elo-fill neutral" style="width:${subBandPct}%"></div>
+      </div>
+      <div class="result-elo-foot">
+        <span>${t('result.currentRankTier')}</span>
+        <span class="result-elo-next">${t('result.subRank', elo % 200)}</span>
+      </div>
+    </div>
+  `;
   setPhase(`
     <div class="start-screen">
       <h1>PokeMini</h1>
@@ -463,18 +491,17 @@ export function showTitle() {
           <span class="start-rank-tier">${r.tier} ${rankSub}</span>
           <span class="start-rank-elo">${elo} ${t('menu.elo')}</span>
         </div>
+        ${rankBarHtml}
       </div>
       <div class="mode-buttons">
-        <button id="btn-ranked">${t('menu.ranked')}</button>
-        <button id="btn-singleplayer">${t('menu.single')}</button>
+        <button id="btn-play">${t('menu.play')}</button>
       </div>
       <div class="start-carousel" aria-hidden="true">
         <div class="start-carousel-track">${carouselSprites}${carouselSprites}</div>
       </div>
     </div>
   `);
-  document.querySelector('#btn-ranked').onclick = () => startRun('ranked');
-  document.querySelector('#btn-singleplayer').onclick = () => startRun('singleplayer');
+  document.querySelector('#btn-play').onclick = () => startRun('ranked');
 }
 
 // Dedicated trainer-name entry screen. Shown on first launch (no `pm-name` in
@@ -799,13 +826,20 @@ function captureLevel() {
   // zone (same pacing as the old 5-step zones, just stretched across more events).
   return zone.min + S.scalingStep(state.advStep) + bonus;
 }
-// Pick a single wild species for one of the two capture slots. Rolls each rare from
-// the zone's `rares` list independently at RUN.rareWildChance; if any hit, a random
-// one of the hitting rares wins. Otherwise picks from the regular pool. excludeIds
-// applies to both rares and pool members so back-to-back picks don't duplicate.
-function pickWildCandidate(excludeIds = []) {
-  const zone = ZONES[state.zone - 1];
+// Pick a single wild species for one of the two capture slots.
+//   • Normal mode (no opts): rolls each rare from the zone's `rares` list at
+//     RUN.rareWildChance, falls back to the current zone's pool.
+//   • Lure mode (opts.allZones): uniform pick from EVERY zone's pool combined.
+//     No rare roll — the cross-zone variety is already the prize.
+// excludeIds applies in either mode so back-to-back picks don't duplicate.
+function pickWildCandidate(excludeIds = [], opts = {}) {
   const excl = new Set(excludeIds);
+  if (opts.allZones) {
+    const all = ZONES.flatMap(z => z.pool).filter(id => !excl.has(id));
+    const useable = all.length > 0 ? all : ZONES.flatMap(z => z.pool);
+    return useable[Math.floor(rng.float() * useable.length)];
+  }
+  const zone = ZONES[state.zone - 1];
   const rares = (zone.rares || []).filter(id => !excl.has(id));
   // Independent 1% rolls per rare — collect every rare that hits.
   const rareHits = rares.filter(() => rng.float() < RUN.rareWildChance);
@@ -817,12 +851,13 @@ function pickWildCandidate(excludeIds = []) {
   if (pool.length === 0) pool = zone.pool;
   return pool[Math.floor(rng.float() * pool.length)];
 }
-function rollCaptureStep(excludeIds = []) {
+function rollCaptureStep(excludeIds = [], opts = {}) {
   // Pick A respecting the carryover exclusion list (from prior Lure uses). Pick B
   // adds A to the exclusion list so the two slots are always different species,
-  // whether normal-pool or rare.
-  const idA = pickWildCandidate(excludeIds);
-  const idB = pickWildCandidate([...excludeIds, idA]);
+  // whether normal-pool or rare. opts pass-through so Lure's allZones flag applies
+  // to both picks of a single re-roll.
+  const idA = pickWildCandidate(excludeIds, opts);
+  const idB = pickWildCandidate([...excludeIds, idA], opts);
   const lvl = captureLevel();
   return {
     kind: 'capture',
@@ -919,8 +954,10 @@ function renderCaptureStep() {
       const idx = S.findItem(state, 'lure'); S.removeItem(state, idx);
       // Exclude the currently-shown species AND any previous picks from this step's
       // history (Lure used twice in a row shouldn't surface the same Pokémon again).
+      // `allZones: true` opens the pool to every zone's wild list — that's Lure's
+      // whole appeal, finding Pokémon you wouldn't normally see in this zone.
       const prevSeen = state.pendingStep.seenIds || [];
-      state.pendingStep = rollCaptureStep(prevSeen);
+      state.pendingStep = rollCaptureStep(prevSeen, { allZones: true });
       // Carry the cumulative exclusion list forward so subsequent Lures keep excluding.
       state.pendingStep.seenIds = Array.from(new Set([...prevSeen, ...state.pendingStep.seenIds]));
       save(); repaint(); renderCaptureStep();
@@ -1213,11 +1250,14 @@ function handleEvent(ev) {
 //   size 2 → [F2, B2]            1 tank front-center, 1 damage back-center (same column)
 //   size 3 → [F1, F2, B2]        2 tanks front + 1 back; F2 protects B2; F1↔F2 adjacency
 //   size 4 → [F1, F2, B1, B2]    2×2 formation; both columns protected; row-pair adjacency
-//   size 5+ falls back to the legacy F1..F3 / B1..B3 fill order.
+//   size 5 → [F1, F2, F3, B1, B2]   full front + 2 back left/middle; F3 picks up a column 3 lead
+//   size 6 → [F1, F2, F3, B1, B2, B3]   full team
 const TRAINER_LAYOUTS = {
   2: ['F2', 'B2'],
   3: ['F1', 'F2', 'B2'],
   4: ['F1', 'F2', 'B1', 'B2'],
+  5: ['F1', 'F2', 'F3', 'B1', 'B2'],
+  6: ['F1', 'F2', 'F3', 'B1', 'B2', 'B3'],
 };
 function trainerSlot(i, size) {
   const layout = TRAINER_LAYOUTS[size];
@@ -1537,28 +1577,6 @@ function showPreBattle() {
     return `<img src="${SPRITE_URL(id)}" class="prebattle-preview-sprite" alt="${sp.name}" title="${sp.name} L${m.level}" loading="lazy">`;
   }).join('');
 
-  if (state.mode === 'singleplayer') {
-    const leaderName = Object.keys(GYM_LEADERS)[state.zone - 1];
-    const leader = GYM_LEADERS[leaderName];
-    // Build the gym leader's roster the same way startBattle does so the preview
-    // matches exactly: zone.level + m.lvl + state.zone difficulty bump.
-    const roster = leader.pool.map(m => ({
-      speciesId: m.id, level: zone.level + (m.lvl || 0) + state.zone,
-    }));
-    const opponentHtml = `
-      <div style="font-size:22px;font-weight:800;color:var(--accent-deep);margin:8px 0;">${t('preBattle.gymLeader', leaderName)}</div>
-      <div class="prebattle-preview">${rosterPreview(roster)}</div>
-    `;
-    setPhase(`
-      <div style="text-align:center;padding:20px;">
-        ${opponentHtml}
-        <button class="primary" id="btn-go-battle" style="margin-top:28px;font-size:18px;padding:14px 32px;">${t('preBattle.enter')}</button>
-      </div>
-    `);
-    document.querySelector('#btn-go-battle').onclick = () => startBattle();
-    return;
-  }
-
   // Ranked PvP — show a "Matchmaking…" loading state, resolve the opponent (server
   // → local snapshot pool → gym-leader ghost), cache the result on state so the
   // actual battle uses the SAME opponent the preview promised, then swap in the
@@ -1615,29 +1633,13 @@ function showPreBattle() {
   })();
 }
 
-// ─── Battle (PvP / gym leader) ────────────────────────────────────────────
+// ─── Battle (PvP) ─────────────────────────────────────────────────────────
+// All runs are ranked now. Singleplayer mode was retired with the menu rework.
+// The server / local-snapshot / gym-leader-ghost fallback chain inside
+// startRankedBattle handles offline play, so any disconnected player still gets
+// a winnable opponent — just no ELO movement (server returns 401 on result post).
 function startBattle() {
-  if (state.mode === 'singleplayer') {
-    const leaderName = Object.keys(GYM_LEADERS)[state.zone - 1];
-    const leader = GYM_LEADERS[leaderName];
-    const zone = ZONES[state.zone - 1];
-    // Gym leader level = zone.level + m.lvl + state.zone. Per-Pokémon `m.lvl` offsets are
-    // already in the data (e.g. Lt. Surge's Raichu has +4); the trailing +state.zone is
-    // the same difficulty bump applied to adventure trainers.
-    const roster = leader.pool.map((m, i) => ({
-      speciesId: m.id, level: zone.level + (m.lvl || 0) + state.zone,
-      slot: i < 3 ? 'F' + (i+1) : 'B' + (i - 2),
-    }));
-    // Auto-evolve
-    for (const m of roster) {
-      let sp = SPECIES[m.speciesId];
-      while (sp && sp.evolvesTo && sp.evolvesAt && m.level >= sp.evolvesAt) { m.speciesId = sp.evolvesTo; sp = SPECIES[m.speciesId]; }
-    }
-    runBattle(roster, t('battle.gymLabel', leaderName), onBattleResult);
-  } else {
-    // Ranked mode — try server. Fallback to gym leader.
-    startRankedBattle();
-  }
+  startRankedBattle();
 }
 
 async function startRankedBattle() {
@@ -2474,8 +2476,9 @@ function endRun(result) {
   }
   const newElo = state.elo | 0;
 
-  // Pokédex medals — awarded only on a COMPLETE ranked run win.
-  if (result === 'won' && state.mode === 'ranked') {
+  // Pokédex medals — awarded on a complete run win. All runs are ranked now
+  // (singleplayer mode was retired), so the mode check is implicit.
+  if (result === 'won') {
     for (const p of S.teamArray(state)) {
       if (p && p.speciesId) markRankedWin(p.speciesId);
     }
@@ -2489,9 +2492,6 @@ function endRun(result) {
   // numeral mirror the topbar's ranking display. Old position renders first, then the
   // bar slides to the new position on the next paint frame for a smooth fill/empty.
   const renderEloBlock = (oldEloVal, newEloVal) => {
-    if (state.mode !== 'ranked') {
-      return `<div class="result-elo-sub">${t('result.singlePlayerNoElo')}</div>`;
-    }
     const oldPct = Math.max(0, Math.min(100, ((oldEloVal % 200) / 200) * 100));
     const newPct = Math.max(0, Math.min(100, ((newEloVal % 200) / 200) * 100));
     const delta = newEloVal - oldEloVal;
