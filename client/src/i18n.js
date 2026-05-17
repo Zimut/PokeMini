@@ -86,6 +86,7 @@ const en = {
   'trainer.normal.subtitle':(lvl) => `Reward: +${lvl} team levels on win.`,
   'trainer.hard.title':     'Hard Trainer',
   'trainer.hard.subtitle':  (lvl, extraPkmn, lvlBump) => `+${extraPkmn} Pokémon, +${lvlBump} level each. Reward: +${lvl} team levels on win.`,
+  'trainer.reward':         (lvl) => `+${lvl} team level`,
   'trainer.skip':        'Pick small berries',
   'trainer.skipReward':  '+2 small berries',
 
@@ -162,6 +163,7 @@ const en = {
   // ─── Options ─────────────────────────────────────────────────────────
   'options.abandon': 'Abandon Run',
   'options.confirmAbandon': 'Abandon this run? Progress will be lost.',
+  'options.confirmAbandonRanked': 'Abandon this ranked run? You will lose 150 ELO as a forfeit penalty.',
   'options.confirmNewRun': 'Start a new run? Your current run will be overwritten.',
   'options.language': 'Language',
 
@@ -342,6 +344,7 @@ const ptBR = {
   'trainer.normal.subtitle':(lvl) => `Recompensa: +${lvl} níveis ao time na vitória.`,
   'trainer.hard.title':     'Treinador Difícil',
   'trainer.hard.subtitle':  (lvl, extraPkmn, lvlBump) => `+${extraPkmn} Pokémon, +${lvlBump} nível cada. Recompensa: +${lvl} níveis ao time na vitória.`,
+  'trainer.reward':         (lvl) => `+${lvl} nível de time`,
   'trainer.skip':        'Pegar frutas pequenas',
   'trainer.skipReward':  '+2 frutas pequenas',
 
@@ -418,6 +421,7 @@ const ptBR = {
   // ─── Options ─────────────────────────────────────────────────────────
   'options.abandon': 'Abandonar Run',
   'options.confirmAbandon': 'Abandonar esta run? O progresso será perdido.',
+  'options.confirmAbandonRanked': 'Abandonar esta run ranqueada? Você perderá 150 ELO como penalidade.',
   'options.confirmNewRun': 'Iniciar uma nova run? A atual será substituída.',
   'options.language': 'Idioma',
 

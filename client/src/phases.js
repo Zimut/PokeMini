@@ -252,7 +252,11 @@ function initOptionsMenu() {
   });
   abandon.addEventListener('click', () => {
     menu.classList.add('hidden');
-    if (confirm(t('options.confirmAbandon'))) abandonRun();
+    // Ranked runs charge an ELO forfeit penalty — warn the player explicitly so they
+    // can't claim they didn't know. Singleplayer keeps the lighter "progress lost" copy.
+    const isRanked = state && state.mode === 'ranked';
+    const msg = isRanked ? t('options.confirmAbandonRanked') : t('options.confirmAbandon');
+    if (confirm(msg)) abandonRun();
   });
   // Language flag clicks — set the locale, then re-render whatever the player was
   // looking at. Mid-run screens come back via navigateToCurrentPhase; the title
@@ -643,7 +647,29 @@ function navigateToCurrentPhase() {
 }
 
 // Public hook for the options menu — clear save + go back to title.
-export function abandonRun() {
+// Ranked abandons trigger the server-side forfeit penalty (default −150 ELO, see
+// POKEMINI_FORFEIT_PENALTY env var on the server) so abandoning isn't a no-cost
+// escape from a bad bracket. Singleplayer abandons stay free. If the server is
+// unreachable we still apply a local-only ELO drop to the cached display value
+// so the title screen reflects the penalty either way.
+export async function abandonRun() {
+  const FORFEIT_FALLBACK = 150;
+  const wasRanked = state && state.mode === 'ranked';
+  if (wasRanked) {
+    let applied = false;
+    try {
+      const { api } = await import('./api.js');
+      const r = await api.forfeitRanked(state);
+      if (r && typeof r.newElo === 'number') {
+        try { localStorage.setItem('pm-elo', String(r.newElo)); } catch {}
+        applied = true;
+      }
+    } catch (e) { /* server unreachable — fall through to local penalty */ }
+    if (!applied) {
+      const cur = parseInt(localStorage.getItem('pm-elo') || '0', 10);
+      try { localStorage.setItem('pm-elo', String(Math.max(0, cur - FORFEIT_FALLBACK))); } catch {}
+    }
+  }
   S.clearRun();
   state = null;
   rng = null;
@@ -769,7 +795,9 @@ function completeAdventureStep() {
 function captureLevel() {
   const zone = ZONES[state.zone - 1];
   const bonus = state.zone === 1 ? 2 : state.zone === 2 ? 1 : 0;
-  return zone.min + state.advStep + bonus;
+  // scalingStep skips Special steps so the 9-step layout still scales 0..5 within a
+  // zone (same pacing as the old 5-step zones, just stretched across more events).
+  return zone.min + S.scalingStep(state.advStep) + bonus;
 }
 function rollCaptureStep(excludeIds = []) {
   const zone = ZONES[state.zone - 1];
@@ -951,7 +979,7 @@ function renderTrainerStep() {
 function trainerCardContent(trainer, difficulty) {
   const zone = ZONES[state.zone - 1];
   const isHard = difficulty === 'hard';
-  const normalLevel = zone.min + 1 + state.advStep + state.zone;
+  const normalLevel = zone.min + 1 + S.scalingStep(state.advStep) + state.zone;
   const trainerLevel = normalLevel + (isHard ? RUN.hardTrainerLevelPerZone * state.zone : 0);
   // Hard adds extraPokemon to size, capped at teamSize. Pool may not have that many
   // entries — fall back to repeating the last entry so the size still grows visibly.
@@ -972,14 +1000,15 @@ function trainerCardContent(trainer, difficulty) {
   const trainerImg = trainer.sprite
     ? `<img src="${TRAINER_SPRITE_URL(trainer.sprite)}" class="event-image trainer-event-sprite" alt="${trainer.name}" loading="lazy" onerror="this.onerror=function(){this.style.display='none'};this.src='${fallbackSrc}'">`
     : '';
-  const title = isHard ? t('trainer.hard.title') : t('trainer.normal.title');
-  const desc = isHard
-    ? t('trainer.hard.subtitle', RUN.trainerWinLevels.hard, RUN.hardTrainerExtraPokemon, RUN.hardTrainerLevelPerZone * state.zone)
-    : t('trainer.normal.subtitle', RUN.trainerWinLevels.normal);
+  // Title is just the trainer's archetype name (e.g. "Bug Catcher", "Black Belt").
+  // Difficulty is conveyed visually instead — the hard card has an orange tint via
+  // .trainer-pick-hard, and the hard roster preview itself shows the +1 Pokémon and
+  // higher levels at a glance. Description is just the team-level reward.
+  const reward = isHard ? RUN.trainerWinLevels.hard : RUN.trainerWinLevels.normal;
   return {
-    title: `${title} — ${trainer.name}`,
-    desc,
-    body: `${trainerImg}<div class="trainer-preview">${sprites}</div>`,
+    title: trainer.name,
+    desc:  t('trainer.reward', reward),
+    body:  `${trainerImg}<div class="trainer-preview">${sprites}</div>`,
   };
 }
 
@@ -1082,7 +1111,7 @@ function eventCardContent(ev) {
       // migration guard above will replace it on the next step anyway).
       const zone = ZONES[state.zone - 1];
       const bonus = state.zone === 1 ? 2 : state.zone === 2 ? 1 : 0;
-      const level = zone.min + state.advStep + bonus;
+      const level = zone.min + S.scalingStep(state.advStep) + bonus;
       const speciesId = ev.species || zone.pool[0];
       const evolvedId = evolvedAt(speciesId, level);
       const sp = SPECIES[evolvedId];
@@ -1151,7 +1180,7 @@ function startTrainerBattle(trainer, difficulty = 'normal') {
   // Base level uses the same formula as the old single-difficulty version. Hard adds
   // hardTrainerLevelPerZone × state.zone per Pokémon, so Z1 hard = +1 lvl, Z7 hard = +7.
   const isHard = difficulty === 'hard';
-  const normalLevel  = zone.min + 1 + state.advStep + state.zone;
+  const normalLevel  = zone.min + 1 + S.scalingStep(state.advStep) + state.zone;
   const trainerLevel = normalLevel + (isHard ? RUN.hardTrainerLevelPerZone * state.zone : 0);
   // Hard adds +hardTrainerExtraPokemon to roster size, capped at RUN.teamSize. Pool
   // may not have that many distinct entries — repeat the last one in that case so the
@@ -1231,9 +1260,10 @@ function startTradeEvent() {
     document.querySelector('#btn-cont').onclick = () => completeAdventureStep();
     return;
   }
-  // Offered level = zone.min + 1 + step number (1-indexed). state.advStep is 0-indexed, so + 2 + state.advStep.
+  // Offered level uses scalingStep instead of raw advStep so Special-step rolls don't
+  // boost the offered Pokémon out of line with the player's actual scaling curve.
   const zone = ZONES[state.zone - 1];
-  const offeredLevel = zone.min + 2 + state.advStep;
+  const offeredLevel = zone.min + 2 + S.scalingStep(state.advStep);
   // Cache the offered Pokémon on state.currentEvent so a refresh mid-trade doesn't
   // reroll it. Trade Card reroll updates this same field (see below).
   if (!state.currentEvent.offered) {
@@ -1393,9 +1423,12 @@ function startWildHordeEvent() {
     state.currentEvent.species = zone.pool[Math.floor(rng.float() * zone.pool.length)];
     save();
   }
-  // Level uses the same formula as a normal wild encounter at this step (Z1 +2, Z2 +1).
+  // Level uses the same formula as a normal wild encounter at this step (Z1 +2, Z2 +1),
+  // routed through scalingStep so the horde matches the player's current bracket
+  // rather than the raw advStep (which would over-shoot since horde fires on a
+  // Special step — advStep counts those, scalingStep doesn't).
   const bonus = state.zone === 1 ? 2 : state.zone === 2 ? 1 : 0;
-  const baseLevel = zone.min + state.advStep + bonus;
+  const baseLevel = zone.min + S.scalingStep(state.advStep) + bonus;
   const speciesId = state.currentEvent.species;
   // Auto-evolve preview species to whatever it'd actually be at fight time.
   const evolvedId = evolvedAt(speciesId, baseLevel);

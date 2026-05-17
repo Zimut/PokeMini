@@ -245,6 +245,27 @@ fastify.post('/pvp/result', {
   return { newElo, delta };
 });
 
+// ─── /pvp/forfeit ─────────────────────────────────────────────────────────
+// Player abandoned a ranked run before its natural end. Apply a fixed forfeit
+// penalty (equivalent to ~3 ranked match losses) so abandoning isn't a free way
+// to escape a bad bracket. Penalty is configurable via POKEMINI_FORFEIT_PENALTY.
+const FORFEIT_PENALTY = parseInt(process.env.POKEMINI_FORFEIT_PENALTY || '150', 10);
+fastify.post('/pvp/forfeit', {
+  schema: {
+    body: {
+      type: 'object', additionalProperties: false,
+      required: ['player', 'token'],
+      properties: { ...authProps },
+    },
+  },
+  config: { requiresAuth: true, rateLimit: { max: 5, timeWindow: '1 minute' } },
+}, async (req) => {
+  const oldElo = req.authPlayer.elo | 0;
+  const newElo = Math.max(0, oldElo - FORFEIT_PENALTY);
+  queries.updatePlayerElo.run({ elo: newElo, ts: Date.now(), id: req.authPlayer.id });
+  return { newElo, delta: newElo - oldElo };
+});
+
 // ─── /pvp/snapshots ───────────────────────────────────────────────────────
 // Batch insert — client periodically drains its local snapshot queue here.
 // Each snapshot's player_name is OVERWRITTEN with the authenticated name to

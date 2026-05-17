@@ -201,10 +201,24 @@ export function findItem(state, itemId) {
   return -1;
 }
 
+// Scaling step counter — how many "scaling" steps the player has progressed through
+// in the current zone. Counts only Capture (advStep % 3 === 0) and Trainer (=== 1)
+// steps; Special steps (=== 2) inherit the preceding trainer's value and do NOT
+// add to the count. With 9 advStep values (0..8) this returns 0..5 — a total of
+// 6 scaling levels per zone, matching the old 5-step zone's per-step pacing now
+// that the zone is 9 steps long.
+//   advStep:       0 1 2 3 4 5 6 7 8
+//   scalingStep:   0 1 1 2 3 3 4 5 5
+export function scalingStep(advStep) {
+  const set    = Math.floor((advStep | 0) / 3);   // 0, 1, 2
+  const within = (advStep | 0) % 3;                // 0=capture, 1=trainer, 2=special
+  return set * 2 + (within === 0 ? 0 : 1);
+}
+
 // Roll zone wild encounter.
 //
 // Level formula (replaces the old random (min+1)..(max-1) roll): deterministic
-//   level = zone.min + state.advStep + EARLY_ZONE_BONUS[state.zone]
+//   level = zone.min + scalingStep(state.advStep) + EARLY_ZONE_BONUS[state.zone]
 // so wilds scale predictably step-by-step within a zone. Early zones get an extra
 // bump (Z1 +2, Z2 +1) because their `min` is low and the gym jumps several levels
 // from there — without the bonus, step-0 Z1 wilds would only be Level 2.
@@ -228,7 +242,7 @@ export function rollWild(state, rng, opts = {}) {
   const r = () => (rng?.float?.() ?? Math.random());
   const id = pool[Math.floor(r() * pool.length)];
   const bonus = WILD_ZONE_BONUS[state.zone] || 0;
-  const baseLevel = z.min + (state.advStep || 0) + bonus;
+  const baseLevel = z.min + scalingStep(state.advStep || 0) + bonus;
   const level = (opts.level != null) ? opts.level : baseLevel;
   return makeInstance(id, level);
 }

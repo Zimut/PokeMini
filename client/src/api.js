@@ -95,6 +95,12 @@ export const api = {
   async resultPvp(state, won, round) {
     return post('/pvp/result', authBody(state, { won: !!won, round: round | 0 || 1 }));
   },
+  // Forfeit a ranked run mid-flight — server applies a fixed ELO penalty (~3 losses
+  // worth, see POKEMINI_FORFEIT_PENALTY) and returns the new ELO so the client can
+  // update its cached display value.
+  async forfeitRanked(state) {
+    return post('/pvp/forfeit', authBody(state));
+  },
   // Batch snapshot upload — populates the server's PvP opponent pool. Called
   // from snapshots.syncSnapshots() at title-screen time, where there's no
   // active state object — so we read player + token from localStorage. The
