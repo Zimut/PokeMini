@@ -775,33 +775,49 @@ button.primary:hover { background: var(--accent-deep); border-color: var(--accen
   background: var(--panel);
   min-height: 200px;
   border-width: 2px;
+  position: relative;
+  overflow: hidden;
 }
 .slot.capture-pick:hover {
   border-color: var(--accent);
-  background: #e8f2fa;
   transform: translateY(-3px);
   box-shadow: 0 6px 16px rgba(45,127,184,0.15);
 }
-.slot.capture-skip {
-  cursor: pointer;
-  display: flex; align-items: center; justify-content: center;
-  background: var(--panel);
-  min-height: 200px;
-  border-width: 2px;
+/* Wild backdrop — the wild.png event art sits behind the Pokémon card, heavily
+   blurred and lightly tinted so it reads as atmosphere rather than illustration.
+   Two pseudo-elements: ::before holds the blurred image; ::after holds a white
+   overlay for foreground contrast (same trick as the existing event-card.is-wild
+   uses, but adapted to the slot card layout). Real content sits at z-index 1. */
+.slot.capture-pick.is-wild-bg::before {
+  content: '';
+  position: absolute; inset: 0;
+  background-image: url('assets/events/wild.png');
+  background-size: cover;
+  background-position: center;
+  filter: blur(8px) saturate(1.1);
+  /* transform scale prevents the blur from showing soft edges along the card border */
+  transform: scale(1.1);
+  z-index: 0;
+  pointer-events: none;
 }
-.slot.capture-skip:hover {
-  border-color: var(--accent);
-  background: #e8f2fa;
-  transform: translateY(-3px);
-  box-shadow: 0 6px 16px rgba(45,127,184,0.15);
+.slot.capture-pick.is-wild-bg::after {
+  content: '';
+  position: absolute; inset: 0;
+  background: rgba(255, 255, 255, 0.55);
+  z-index: 0;
+  pointer-events: none;
+  transition: background 0.2s ease;
 }
-.slot.capture-skip.disabled { opacity: 0.55; cursor: not-allowed; pointer-events: none; }
-.slot.capture-skip .capture-skip-body { text-align: center; padding: 16px; width: 100%; }
-.slot.capture-skip .capture-skip-icon img { width: 80px; height: 80px; image-rendering: pixelated; }
-.slot.capture-skip .capture-skip-label { font-weight: 800; color: var(--accent-deep); margin: 10px 0 6px; font-size: 16px; }
-/* Reward text — context-agnostic so the trainer-step skip card (which uses the
-   `.card.event-card.capture-skip` layout) and the capture-step skip slot both pick
-   up the same styling. */
+.slot.capture-pick.is-wild-bg:hover::after { background: rgba(232, 242, 250, 0.45); }
+/* Lift the actual card content above both pseudo layers. */
+.slot.capture-pick > * { position: relative; z-index: 1; }
+
+/* Skip card — uses the standard event-card layout. Bump min-height so it lines up
+   with the wild slots' 200px footprint in the same grid row. */
+.card.event-card.capture-skip { min-height: 200px; }
+
+/* Reward strip text — context-agnostic so the capture-step skip card and the
+   trainer-step skip card both use it. */
 .capture-skip-reward {
   text-align: center; font-weight: 700; color: var(--accent-deep);
   padding: 4px 8px 8px; font-size: 13px;

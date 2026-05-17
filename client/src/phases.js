@@ -804,19 +804,23 @@ function renderCaptureStep() {
   // a glance before deciding. The skip card matches the slot's footprint with a
   // berry icon + reward summary; disabled state grays it out when item slots are full.
   const wildSlotHtml = (p, key) => `
-    <div class="slot capture-pick" data-key="${key}">
+    <div class="slot capture-pick is-wild-bg" data-key="${key}">
       ${pokemonCardInnerHTML(p)}
     </div>`;
   const skipBody = slotsFree
     ? `<div class="capture-skip-reward">${t('capture.skipReward')}</div>`
     : `<div class="capture-skip-reward muted">${t('capture.skipNoSlots')}</div>`;
+  // Skip card uses the standard event-card layout (header + full-bleed berry image +
+  // reward strip) so the berry sprite reads at a glance, the same way it did before
+  // we promoted the wild options to full slot cards.
   const skipSlotHtml = `
-    <div class="slot capture-skip${slotsFree ? '' : ' disabled'}" data-key="skip">
-      <div class="capture-skip-body">
-        <div class="capture-skip-icon">${eventImg('berry', 'oran-berry')}</div>
-        <div class="capture-skip-label">${t('capture.skip')}</div>
-        ${skipBody}
+    <div class="card event-card capture-skip${slotsFree ? '' : ' disabled'}" data-key="skip">
+      <div class="card-header">
+        <div class="ctitle">${t('capture.skip')}</div>
+        <div class="cdesc"></div>
       </div>
+      <div class="card-image">${eventImg('berry', 'oran-berry')}</div>
+      ${skipBody}
     </div>`;
   setPhase(`
     ${phaseHeader(t('capture.title'), t('capture.subtitle'))}
