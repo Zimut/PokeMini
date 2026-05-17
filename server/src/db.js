@@ -51,12 +51,26 @@ export const queries = {
   // Snapshots — write / match / prune
   insertSnapshot: db.prepare(`INSERT INTO snapshots (zone, badges, strikes, elo_bucket, run_id, player_name, team_json, created_at)
     VALUES (@zone, @badges, @strikes, @eloBucket, @runId, @playerName, @teamJson, @ts)`),
+  // Flexible matcher — caller passes WIDE filter ranges plus TARGET values; the
+  // query returns the closest available snapshot via ORDER BY distance. The
+  // caller's cascade (findOpponent) controls how aggressively to widen the
+  // filters between tries, but a single query body handles the actual "give me
+  // the best one in this range" lookup. RANDOM() is the final tiebreaker so
+  // repeat matchmaking against an identical-distance set still varies opponents.
   matchSnapshot: db.prepare(`SELECT * FROM snapshots
-    WHERE zone = @zone AND badges = @badges AND strikes = @strikes
+    WHERE zone   BETWEEN @zoneMin    AND @zoneMax
+      AND badges BETWEEN @badgesMin  AND @badgesMax
+      AND strikes BETWEEN @strikesMin AND @strikesMax
       AND elo_bucket BETWEEN @bucketMin AND @bucketMax
       AND created_at > @minAge
       AND (player_name IS NULL OR player_name <> @excludeName COLLATE NOCASE)
-    ORDER BY created_at DESC LIMIT 1`),
+    ORDER BY
+      ABS(zone    - @zoneTarget),
+      ABS(badges  - @badgesTarget),
+      ABS(strikes - @strikesTarget),
+      ABS(elo_bucket - @bucketTarget),
+      RANDOM()
+    LIMIT 1`),
   pruneSnapshots: db.prepare(`DELETE FROM snapshots WHERE created_at < ?`),
 
   // Stats — count of distinct players who hit any authenticated endpoint in the

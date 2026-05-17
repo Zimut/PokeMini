@@ -37,21 +37,60 @@ const SNAPSHOT_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 // the pool stays representative and no single player can flood it.
 const PER_PLAYER_SNAPSHOT_CAP = 20;
 
+// Cascade — each pass relaxes more filters within the SAME zone. We never widen
+// across zones because the level difference between zones (≈7 levels per step)
+// makes cross-zone matches strategically meaningless. `lockBadges` / `lockStrikes`
+// toggle whether the filter is restricted to the exact value or allowed to span
+// the full possible range. `eloRange` widens the ELO bucket search.
+//
+// The single-query distance ORDER BY picks the closest available snapshot in
+// whatever window the pass opens up, so we always get the best match in the
+// loosest pass that actually has data — never a worse one from a tighter pass
+// that already missed. If every same-zone pass misses, the gym leader fallback
+// fires (the player's zone has zero usable snapshots).
+const MATCH_PASSES = [
+  // Tight bracket — exact badges/strikes, ELO ±1 bucket (±100 ELO)
+  { lockBadges: true,  lockStrikes: true,  eloRange: 1   },
+  // Widen ELO — same bracket, ELO ±5 buckets (±500 ELO)
+  { lockBadges: true,  lockStrikes: true,  eloRange: 5   },
+  // Drop strikes lock — find players who match on badges, any strikes, wider
+  // ELO. Key fix for "lost a strike → bracket goes empty".
+  { lockBadges: true,  lockStrikes: false, eloRange: 5   },
+  // Drop badges lock too — anyone in this zone, any ELO bucket. Last attempt
+  // before gym fallback.
+  { lockBadges: false, lockStrikes: false, eloRange: 100 },
+];
+
 export function findOpponent({ zone, badges, strikes, elo, excludeName = '' }) {
   const bucket = eloBucket(elo);
   const minAge = Date.now() - SNAPSHOT_MAX_AGE_MS;
-  // Widen bucket search if needed. excludeName prevents matching against
-  // yourself — the player's own recent snapshot is otherwise a perfect bucket
-  // hit and would dominate matchmaking.
-  for (const range of [0, 1, 2, 5, 100]) {
+  for (const p of MATCH_PASSES) {
     const snap = queries.matchSnapshot.get({
-      zone, badges, strikes,
-      bucketMin: bucket - range, bucketMax: bucket + range, minAge,
+      // Hard filter bounds — zone is ALWAYS exact, only badges/strikes/ELO relax
+      zoneMin:    zone,
+      zoneMax:    zone,
+      badgesMin:  p.lockBadges  ? badges  : 0,
+      badgesMax:  p.lockBadges  ? badges  : 99,
+      strikesMin: p.lockStrikes ? strikes : 0,
+      strikesMax: p.lockStrikes ? strikes : 99,
+      bucketMin:  bucket - p.eloRange,
+      bucketMax:  bucket + p.eloRange,
+      // Target values — ORDER BY uses these to pick the closest snapshot within
+      // the filter window
+      zoneTarget:    zone,
+      badgesTarget:  badges,
+      strikesTarget: strikes,
+      bucketTarget:  bucket,
+      minAge,
       excludeName: excludeName || '',
     });
-    if (snap) return { source: 'snapshot', roster: JSON.parse(snap.team_json), opponentName: snap.player_name || 'Ghost' };
+    if (snap) {
+      return { source: 'snapshot', roster: JSON.parse(snap.team_json), opponentName: snap.player_name || 'Ghost' };
+    }
   }
-  // Fallback: gym leader for this zone
+  // Gym leader for this zone — no real player snapshots in this zone at all
+  // (within the freshness window). Should be rare once the playerbase has a
+  // few active players per zone.
   return { source: 'gym', roster: buildGymLeaderRoster(zone), opponentName: `Gym Leader ${zone}` };
 }
 
