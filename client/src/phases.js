@@ -514,6 +514,12 @@ export function showTitle() {
   document.querySelector('#bottombar').classList.add('hidden');
   hideOptionsMenu();
   updateOptionsButton();
+  // One-shot ELO migration — bootstrap server-side ELO from this account's
+  // existing client-side pm-elo. Server only adopts the value if its own is
+  // still 0, so this can only fill from a fresh state, never override later
+  // legit ELO movement. Fire-and-forget; if the server is down it's a no-op
+  // and we'll try again on the next title-screen visit.
+  import('./api.js').then(({ api }) => api.syncElo?.().catch(() => {}));
   // Build a duplicated row of every species sprite for the scrolling carousel. The row
   // is rendered twice (back-to-back) so the CSS animation from translateX(0) →
   // translateX(-50%) yields a seamless infinite loop.
