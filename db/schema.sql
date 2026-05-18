@@ -11,7 +11,10 @@ CREATE TABLE IF NOT EXISTS players (
   -- it in localStorage and MUST present it on every authenticated request. Once set,
   -- a player name is locked to that token — no one else can claim it. NULL on legacy
   -- rows; the first claim attempt against such a row mints a token (migration window).
-  claim_token TEXT
+  claim_token TEXT,
+  -- country: 2-letter ISO 3166 code (e.g. 'BR', 'US') resolved via geo-IP at signup.
+  -- NULL when the lookup fails or hasn't been retried yet.
+  country TEXT
 );
 CREATE UNIQUE INDEX IF NOT EXISTS idx_players_name_ci ON players(name COLLATE NOCASE);
 

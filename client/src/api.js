@@ -102,6 +102,31 @@ export const api = {
   async forfeitRanked(state) {
     return post('/pvp/forfeit', authBody(state));
   },
+  // Trigger a country lookup on the server. Used as a one-shot migration for
+  // accounts that predate country tracking (no country at signup), and as a
+  // manual refresh if a player wants to update their flag after moving. Server
+  // does the geo-IP work and persists the result; we return it for the client
+  // to cache in localStorage so we don't re-fire on every load.
+  async refreshCountry() {
+    let player = '';
+    try { player = localStorage.getItem('pm-name') || ''; } catch {}
+    const token = getToken();
+    if (!player || !token) return { country: null };
+    return post('/player/refresh-country', { player, token });
+  },
+  // One-shot ELO migration — reports the player's locally-accumulated ELO so
+  // the server can adopt it (only if its own current is 0). Reads everything
+  // from localStorage since this fires from the title screen where no live
+  // state exists. Returns silently with `synced: false` if anything's missing.
+  async syncElo() {
+    let player = '';
+    try { player = localStorage.getItem('pm-name') || ''; } catch {}
+    const token = getToken();
+    let clientElo = 0;
+    try { clientElo = parseInt(localStorage.getItem('pm-elo') || '0', 10) | 0; } catch {}
+    if (!player || !token || clientElo <= 0) return { ok: false, synced: false };
+    return post('/player/sync-elo', { player, token, clientElo });
+  },
   // Public leaderboard — top N players by ELO. No auth required.
   async fetchLeaderboard(limit = 20) {
     const url = SERVER + '/leaderboard?limit=' + (limit | 0);

@@ -27,6 +27,9 @@ function tableHasColumn(table, column) {
 if (!tableHasColumn('players', 'claim_token')) {
   db.exec('ALTER TABLE players ADD COLUMN claim_token TEXT');
 }
+if (!tableHasColumn('players', 'country')) {
+  db.exec('ALTER TABLE players ADD COLUMN country TEXT');
+}
 
 export default db;
 
@@ -82,7 +85,11 @@ export const queries = {
   // Top-N players by ELO for the leaderboard widget. last_seen as a tiebreaker
   // keeps the order stable when multiple players sit at exactly the same ELO.
   topPlayersByElo: db.prepare(
-    `SELECT name, elo FROM players ORDER BY elo DESC, last_seen DESC LIMIT ?`),
+    `SELECT name, elo, country FROM players ORDER BY elo DESC, last_seen DESC LIMIT ?`),
+  // Country update — set by /player/claim's fire-and-forget geo-IP lookup or by
+  // /player/refresh-country (manual retry). Stored as 2-letter ISO code.
+  setPlayerCountry: db.prepare(
+    `UPDATE players SET country = @country WHERE id = @id`),
 
   // Per-player snapshot cap — count + delete-oldest to keep one player from spamming
   // the matchmaking pool. Indexed by player_name (case-insensitive).

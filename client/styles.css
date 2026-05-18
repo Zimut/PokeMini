@@ -394,6 +394,16 @@ body { background: var(--bg); color: var(--ink); }
 .leaderboard-name {
   font-weight: 700; color: var(--ink);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  display: flex; align-items: center; gap: 8px;
+}
+.leaderboard-flag {
+  width: 22px; height: 16px;
+  object-fit: contain;
+  display: inline-block;
+  flex-shrink: 0;
+  /* Soft border so light flags (e.g. JP white) read against the row background. */
+  border-radius: 2px;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.08);
 }
 .leaderboard-elo {
   font-weight: 700; color: var(--accent-deep);
@@ -892,6 +902,21 @@ button.primary:hover { background: var(--accent-deep); border-color: var(--accen
 .trade-arrow {
   font-size: 32px; font-weight: 800; color: var(--accent-deep);
   user-select: none;
+}
+
+/* Collector event — single centered drop zone (vs. trade's two-sided grid).
+   Reuses .trade-dropzone for the drop visual itself, just wraps it in a centered
+   single-column container. The hover price preview inside the zone is rendered
+   2× larger than the standard town sell-preview so the player can read the
+   gold value at a glance from across the screen. */
+.collector-stage {
+  display: flex; flex-direction: column; align-items: center; gap: 8px;
+  max-width: 340px; margin: 16px auto 8px;
+}
+.collector-drop .sell-preview {
+  font-size: 36px; font-weight: 800;
+  color: var(--accent-deep);
+  letter-spacing: 0.02em;
 }
 
 @media (max-width: 700px) {

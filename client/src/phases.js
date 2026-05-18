@@ -439,6 +439,18 @@ function openLeaderboardPanel() {
 function closeLeaderboardPanel() {
   document.querySelector('#leaderboard-panel')?.classList.add('hidden');
 }
+// Country code → Twemoji flag URL. Each ISO-3166 letter maps to a Unicode
+// regional-indicator codepoint (A → 0x1f1e6, B → 0x1f1e7, etc.); the two
+// codepoints joined with a dash form the Twemoji asset filename. Returns
+// null for invalid / missing codes so the renderer can skip drawing the img.
+function countryFlagUrl(code) {
+  if (!code || code.length !== 2) return null;
+  const upper = code.toUpperCase();
+  if (!/^[A-Z]{2}$/.test(upper)) return null;
+  const cp = upper.split('').map(c => (c.charCodeAt(0) - 65 + 0x1f1e6).toString(16)).join('-');
+  return `https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/svg/${cp}.svg`;
+}
+
 function renderLeaderboard(players) {
   const listEl = document.querySelector('#leaderboard-panel .leaderboard-list');
   if (!listEl) return;
@@ -452,10 +464,14 @@ function renderLeaderboard(players) {
     const r = rankFromElo(p.elo | 0);
     const sub = ROMAN[r.sub] || String(r.sub);
     const isMe = (p.name || '').toLowerCase() === myName;
+    const flagUrl = countryFlagUrl(p.country);
+    const flagHtml = flagUrl
+      ? `<img class="leaderboard-flag" src="${flagUrl}" alt="${(p.country || '').toUpperCase()}" title="${(p.country || '').toUpperCase()}" loading="lazy">`
+      : '';
     return `<div class="leaderboard-row${isMe ? ' you' : ''}">
       <div class="leaderboard-rank">#${i + 1}</div>
       <div class="leaderboard-rank-icon" title="${r.tier} ${sub}"><img src="${rankIcon(r.tier)}" alt="${r.tier}" loading="lazy"></div>
-      <div class="leaderboard-name">${escapeHtml(p.name || '')}</div>
+      <div class="leaderboard-name">${flagHtml}${escapeHtml(p.name || '')}</div>
       <div class="leaderboard-elo">${p.elo | 0} ${t('menu.elo')}</div>
     </div>`;
   }).join('');
@@ -520,6 +536,17 @@ export function showTitle() {
   // legit ELO movement. Fire-and-forget; if the server is down it's a no-op
   // and we'll try again on the next title-screen visit.
   import('./api.js').then(({ api }) => api.syncElo?.().catch(() => {}));
+  // One-shot country lookup for accounts created before country tracking.
+  // Cached in pm-country so we only hit the geo-IP rate limit once. Subsequent
+  // loads short-circuit. If a player wants to refresh their flag (e.g. after
+  // moving) they can clear pm-country in their browser and reload.
+  try {
+    if (localStorage.getItem('pm-name') && !localStorage.getItem('pm-country')) {
+      import('./api.js').then(({ api }) => api.refreshCountry?.().then(r => {
+        if (r && r.country) try { localStorage.setItem('pm-country', r.country); } catch {}
+      }).catch(() => {}));
+    }
+  } catch {}
   // Build a duplicated row of every species sprite for the scrolling carousel. The row
   // is rendered twice (back-to-back) so the CSS animation from translateX(0) →
   // translateX(-50%) yields a seamless infinite loop.
@@ -1563,11 +1590,9 @@ function startCollectorEvent() {
     return;
   }
   setPhase(`${phaseHeader(t('event.collector.title'), t('collector.subtitle'))}
-    <div class="trade-stage">
-      <div class="trade-side">
-        <div class="phase-subtitle">${t('collector.dropLabel')}</div>
-        <div class="trade-dropzone collector-drop" id="collector-drop">${t('collector.dropPrompt')}</div>
-      </div>
+    <div class="collector-stage">
+      <div class="phase-subtitle">${t('collector.dropLabel')}</div>
+      <div class="trade-dropzone collector-drop" id="collector-drop">${t('collector.dropPrompt')}</div>
     </div>
     <div style="text-align:center;margin-top:14px;">
       <button id="btn-skip">${t('collector.skip')}</button>

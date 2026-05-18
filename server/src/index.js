@@ -104,6 +104,33 @@ fastify.addHook('preHandler', async (req, rep) => {
   req.authPlayer = row;
 });
 
+// ─── Geo-IP lookup ───────────────────────────────────────────────────────
+// Resolves a 2-letter ISO country code from an IP using ipapi.co's free tier
+// (1k/day, no API key). Best-effort: short timeout, swallows errors, returns
+// null on any failure — the caller decides whether to retry. Skipped for local
+// / private / loopback IPs so dev environments don't waste lookups.
+async function lookupCountry(ip) {
+  if (!ip) return null;
+  if (ip === '127.0.0.1' || ip === '::1' || ip.startsWith('192.168.') || ip.startsWith('10.') || ip.startsWith('172.')) return null;
+  try {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 3000);
+    try {
+      const res = await fetch(`https://ipapi.co/${ip}/country/`, {
+        headers: { 'User-Agent': 'PokeMini/1.0 (pokemini.labzts.fun)' },
+        signal: ctrl.signal,
+      });
+      if (!res.ok) return null;
+      const text = (await res.text()).trim();
+      // ipapi.co returns just the country code on success ("BR"), or a JSON
+      // error body on failure. Validate as a 2-letter A-Z to filter out the
+      // error case without needing to inspect the body.
+      if (/^[A-Z]{2}$/.test(text)) return text;
+      return null;
+    } finally { clearTimeout(timer); }
+  } catch { return null; }
+}
+
 // ─── /health ──────────────────────────────────────────────────────────────
 fastify.get('/health', { config: { rateLimit: { max: 60, timeWindow: '1 minute' } } },
   async () => ({ ok: true, ts: Date.now() }));
@@ -156,7 +183,70 @@ fastify.post('/player/claim', {
 }, async (req, rep) => {
   const result = claimPlayerName(req.body.name);
   if (!result.ok) return rep.code(409).send({ error: 'name_taken' });
+  // Fire-and-forget country resolution. The claim returns immediately so the
+  // user doesn't wait on an external HTTP round-trip; the country fills in on
+  // the background task and is visible the next time the player row is read.
+  // If the lookup fails (timeout, rate-limit, etc.) country stays NULL and
+  // can be retried later via /player/refresh-country.
+  lookupCountry(req.ip).then(country => {
+    if (country) queries.setPlayerCountry.run({ id: result.player.id, country });
+  }).catch(() => {});
   return { player: result.player.name, token: result.token, elo: result.player.elo | 0 };
+});
+
+// ─── /player/refresh-country ─────────────────────────────────────────────
+// Manual retry path — tries the geo-IP lookup again and overwrites the stored
+// country if it succeeds. Useful when the original lookup at signup failed,
+// or when a player has moved / wants to update their flag. Tight rate limit
+// since this is a one-off action, not a hot path.
+fastify.post('/player/refresh-country', {
+  schema: {
+    body: {
+      type: 'object', additionalProperties: false,
+      required: ['player', 'token'],
+      properties: { ...authProps },
+    },
+  },
+  config: { requiresAuth: true, rateLimit: { max: 2, timeWindow: '1 minute' } },
+}, async (req) => {
+  const country = await lookupCountry(req.ip);
+  if (country) queries.setPlayerCountry.run({ id: req.authPlayer.id, country });
+  return { country };
+});
+
+// ─── /player/sync-elo ────────────────────────────────────────────────────
+// One-shot migration endpoint: real players accumulated ELO client-side only
+// (the per-battle /pvp/result endpoint was never wired up from the client, so
+// the server's players.elo column has been stuck at 0 since each account was
+// claimed). This endpoint lets a client report its local ELO ONCE — server
+// only adopts the value if its own current is 0, so subsequent calls (or
+// shenanigans like editing localStorage to inflate a number) can't override
+// legit server-side ELO.
+//
+// Capped at SYNC_ELO_CAP so an attacker who only just claimed a name can't
+// silently set themselves to a stratospheric value. Existing players above
+// the cap can earn the rest back through normal /run/end progression.
+const SYNC_ELO_CAP = parseInt(process.env.POKEMINI_SYNC_ELO_CAP || '2000', 10);
+fastify.post('/player/sync-elo', {
+  schema: {
+    body: {
+      type: 'object', additionalProperties: false,
+      required: ['player', 'token', 'clientElo'],
+      properties: {
+        ...authProps,
+        clientElo: { type: 'integer', minimum: 0, maximum: 10000 },
+      },
+    },
+  },
+  config: { requiresAuth: true, rateLimit: { max: 5, timeWindow: '1 minute' } },
+}, async (req) => {
+  const serverElo = req.authPlayer.elo | 0;
+  const clientElo = Math.min(SYNC_ELO_CAP, Math.max(0, req.body.clientElo | 0));
+  if (serverElo === 0 && clientElo > 0) {
+    queries.updatePlayerElo.run({ elo: clientElo, ts: Date.now(), id: req.authPlayer.id });
+    return { elo: clientElo, synced: true };
+  }
+  return { elo: serverElo, synced: false };
 });
 
 // ─── /run/start ───────────────────────────────────────────────────────────

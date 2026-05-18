@@ -28,12 +28,16 @@ const insert = db.prepare(`INSERT INTO snapshots
   VALUES (?, ?, ?, ?, NULL, ?, ?, ?)`);
 
 // Players-table upsert so the fake names also appear in the leaderboard. ELO
-// uses the player's highest-zone snapshot ELO (final-run value). Idempotent —
-// re-running tops up the ELO if it changed but doesn't duplicate names.
+// uses the player's highest-zone snapshot ELO (final-run value). Country gives
+// each fake a distinct flag in the leaderboard for visual variety. Idempotent —
+// re-running tops up ELO + country if changed but doesn't duplicate names.
 const upsertPlayer = db.prepare(`INSERT INTO players
-  (id, name, elo, created_at, last_seen, claim_token)
-  VALUES (@id, @name, @elo, @ts, @ts, NULL)
-  ON CONFLICT(id) DO UPDATE SET elo = excluded.elo, last_seen = excluded.last_seen`);
+  (id, name, elo, country, created_at, last_seen, claim_token)
+  VALUES (@id, @name, @elo, @country, @ts, @ts, NULL)
+  ON CONFLICT(id) DO UPDATE SET
+    elo = excluded.elo,
+    country = excluded.country,
+    last_seen = excluded.last_seen`);
 const findPlayerByName = db.prepare(`SELECT * FROM players WHERE name = ? COLLATE NOCASE`);
 
 // Helper: build a roster entry. Slot, level, species required; rest defaulted by the engine.
@@ -216,13 +220,13 @@ const mossbladeRuns = [
 ];
 
 const seedRuns = [
-  { name: 'Crimson',   runs: crimsonRuns   },
-  { name: 'Marina',    runs: marinaRuns    },
-  { name: 'Mossblade', runs: mossbladeRuns },
+  { name: 'Crimson',   country: 'US', runs: crimsonRuns   },
+  { name: 'Marina',    country: 'JP', runs: marinaRuns    },
+  { name: 'Mossblade', country: 'BR', runs: mossbladeRuns },
 ];
 
 let count = 0;
-for (const { name, runs } of seedRuns) {
+for (const { name, country, runs } of seedRuns) {
   for (const r of runs) {
     insert.run(
       r.zone, r.badges, 3, bucket(r.elo),
@@ -230,13 +234,14 @@ for (const { name, runs } of seedRuns) {
     );
     count++;
   }
-  // Players-table entry — ELO from the final-zone (highest) run so the leaderboard
-  // shows the fake players at their "current" rank. Existing row gets its ELO topped
-  // up; new row is inserted with a fresh UUID and no claim token.
-  const finalElo = runs[runs.length - 1].elo;
-  const existing = findPlayerByName.get(name);
-  const id = existing ? existing.id : crypto.randomUUID();
-  upsertPlayer.run({ id, name, elo: finalElo, ts: now });
+  // NOTE: previously this script also inserted/upserted a `players` row for each
+  // fake so they appeared in the leaderboard with their final-zone ELO. That was
+  // removed — the leaderboard is for real players only. The fakes still serve
+  // matchmaking via their snapshots (which is the whole reason this script exists);
+  // they just don't show up in the rankings. To remove any rows left over from a
+  // previous seed run, run this once on the VPS:
+  //   sudo sqlite3 .../pokemini.db \
+  //     "DELETE FROM players WHERE name IN ('Crimson','Marina','Mossblade') COLLATE NOCASE"
 }
 
 console.log(`Seeded ${count} snapshots across ${seedRuns.length} fake players.`);
