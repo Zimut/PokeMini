@@ -108,6 +108,24 @@ fastify.addHook('preHandler', async (req, rep) => {
 fastify.get('/health', { config: { rateLimit: { max: 60, timeWindow: '1 minute' } } },
   async () => ({ ok: true, ts: Date.now() }));
 
+// ─── /leaderboard ────────────────────────────────────────────────────────
+// Public, no auth. Returns the top N players by ELO. Caller is the in-game
+// leaderboard widget; rate-limited modestly to discourage anyone scraping a
+// live ladder on a hot loop.
+fastify.get('/leaderboard', {
+  schema: {
+    querystring: {
+      type: 'object', additionalProperties: false,
+      properties: { limit: { type: 'integer', minimum: 1, maximum: 100 } },
+    },
+  },
+  config: { rateLimit: { max: 30, timeWindow: '1 minute' } },
+}, async (req) => {
+  const limit = Math.min(100, Math.max(1, req.query.limit | 0 || 20));
+  const rows = queries.topPlayersByElo.all(limit);
+  return { players: rows, ts: Date.now() };
+});
+
 // ─── /stats ──────────────────────────────────────────────────────────────
 // Public — no auth, just current activity numbers for the client's status
 // widget. "Online" = a player whose last_seen has been bumped within the

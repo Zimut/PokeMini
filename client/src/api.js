@@ -102,6 +102,13 @@ export const api = {
   async forfeitRanked(state) {
     return post('/pvp/forfeit', authBody(state));
   },
+  // Public leaderboard — top N players by ELO. No auth required.
+  async fetchLeaderboard(limit = 20) {
+    const url = SERVER + '/leaderboard?limit=' + (limit | 0);
+    const res = await fetch(url, { method: 'GET', cache: 'no-store' });
+    if (!res.ok) throw new Error('leaderboard ' + res.status);
+    return res.json();
+  },
   // Batch snapshot upload — populates the server's PvP opponent pool. Called
   // from snapshots.syncSnapshots() at title-screen time, where there's no
   // active state object — so we read player + token from localStorage. The

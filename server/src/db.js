@@ -79,6 +79,10 @@ export const queries = {
   countActivePlayersSince: db.prepare(
     `SELECT COUNT(*) AS n FROM players WHERE last_seen >= ?`),
   countTotalPlayers: db.prepare(`SELECT COUNT(*) AS n FROM players`),
+  // Top-N players by ELO for the leaderboard widget. last_seen as a tiebreaker
+  // keeps the order stable when multiple players sit at exactly the same ELO.
+  topPlayersByElo: db.prepare(
+    `SELECT name, elo FROM players ORDER BY elo DESC, last_seen DESC LIMIT ?`),
 
   // Per-player snapshot cap — count + delete-oldest to keep one player from spamming
   // the matchmaking pool. Indexed by player_name (case-insensitive).

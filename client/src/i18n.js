@@ -59,6 +59,13 @@ const en = {
   'event.wildHorde.desc':  'Fight 6 of the same Pokémon for +1 team level.',
   'event.wildHorde.intro': (name) => `Six ${name} have appeared. Defeat them for +1 team level.`,
   'event.wildHorde.descSpecific': (name) => `Six ${name} — defeat them for +1 team level.`,
+  'event.collector.title': 'Collector',
+  'event.collector.desc':  'Release a Pokémon for 2× its sell value.',
+  'collector.subtitle':    'Drag a Pokémon into the offer slot to release it for double its sell value.',
+  'collector.dropLabel':   'Your Offer',
+  'collector.dropPrompt':  'Drop a Pokémon',
+  'collector.skip':        'Decline',
+  'collector.teamTooSmall':'You need at least two Pokémon to deal with the collector.',
 
   // ─── Adventure card actions ──────────────────────────────────────────
   'adventure.repelActive': 'Repel active',
@@ -169,6 +176,12 @@ const en = {
   'options.confirmAbandonRanked': 'Abandon this ranked run? You will lose 150 ELO as a forfeit penalty.',
   'options.confirmNewRun': 'Start a new run? Your current run will be overwritten.',
   'options.language': 'Language',
+
+  // ─── Leaderboard ─────────────────────────────────────────────────────
+  'leaderboard.title':   'Top 20',
+  'leaderboard.loading': 'Loading…',
+  'leaderboard.error':   'Leaderboard unavailable.',
+  'leaderboard.empty':   'No players ranked yet.',
 
   // ─── Pokédex ─────────────────────────────────────────────────────────
   'dex.title': 'Pokédex',
@@ -318,6 +331,13 @@ const ptBR = {
   'event.wildHorde.desc':  'Lute contra 6 do mesmo Pokémon por +1 nível de time.',
   'event.wildHorde.intro': (name) => `Seis ${name} apareceram. Derrote-os por +1 nível de time.`,
   'event.wildHorde.descSpecific': (name) => `Seis ${name} — derrote-os por +1 nível de time.`,
+  'event.collector.title': 'Colecionador',
+  'event.collector.desc':  'Libere um Pokémon por 2× seu valor de venda.',
+  'collector.subtitle':    'Arraste um Pokémon para o slot de oferta para liberá-lo pelo dobro do valor de venda.',
+  'collector.dropLabel':   'Sua Oferta',
+  'collector.dropPrompt':  'Solte um Pokémon',
+  'collector.skip':        'Recusar',
+  'collector.teamTooSmall':'Você precisa de pelo menos dois Pokémon para negociar com o colecionador.',
 
   // ─── Adventure card actions ──────────────────────────────────────────
   'adventure.repelActive': 'Repelente ativo',
@@ -428,6 +448,12 @@ const ptBR = {
   'options.confirmAbandonRanked': 'Abandonar esta run ranqueada? Você perderá 150 ELO como penalidade.',
   'options.confirmNewRun': 'Iniciar uma nova run? A atual será substituída.',
   'options.language': 'Idioma',
+
+  // ─── Leaderboard ─────────────────────────────────────────────────────
+  'leaderboard.title':   'Top 20',
+  'leaderboard.loading': 'Carregando…',
+  'leaderboard.error':   'Ranking indisponível.',
+  'leaderboard.empty':   'Nenhum jogador ranqueado ainda.',
 
   // ─── Pokédex ─────────────────────────────────────────────────────────
   'dex.title': 'Pokédex',

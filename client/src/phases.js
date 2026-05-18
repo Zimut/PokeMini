@@ -223,8 +223,10 @@ function hideOptionsMenu() {
 function updateOptionsButton() {
   const optBtn = document.querySelector('#options-btn');
   const dexBtn = document.querySelector('#dex-btn');
+  const leaderBtn = document.querySelector('#leaderboard-btn');
   if (optBtn) optBtn.classList.remove('hidden');
   if (dexBtn) dexBtn.classList.remove('hidden');
+  if (leaderBtn) leaderBtn.classList.remove('hidden');
   // The dropdown only closes itself when no run is active; the button itself stays.
   if (!state || state.runOver) hideOptionsMenu();
   const abandon = document.querySelector('#opt-abandon');
@@ -412,10 +414,74 @@ function initDexButton() {
   });
 }
 
+// ─── Leaderboard panel ────────────────────────────────────────────────────
+// Fetches top-N players from /api/leaderboard and renders them as a ranked list.
+// Each row shows: rank #, rank-tier ball icon, player name, ELO. The player's
+// own name (if claimed) gets a soft highlight so they can spot themselves.
+function openLeaderboardPanel() {
+  const panel = document.querySelector('#leaderboard-panel');
+  if (!panel) return;
+  panel.classList.remove('hidden');
+  // Refresh title to current locale + reset list to a loading placeholder so
+  // re-opens after a network failure don't show stale rows.
+  const titleEl = panel.querySelector('.leaderboard-title');
+  if (titleEl) titleEl.textContent = t('leaderboard.title');
+  const listEl = panel.querySelector('.leaderboard-list');
+  if (listEl) listEl.innerHTML = `<div class="leaderboard-loading">${t('leaderboard.loading')}</div>`;
+  // Fetch + render. Errors fall back to a localized "unavailable" message rather
+  // than a broken half-rendered panel.
+  import('./api.js').then(({ api }) => api.fetchLeaderboard(20))
+    .then(data => renderLeaderboard(data && data.players || []))
+    .catch(() => {
+      if (listEl) listEl.innerHTML = `<div class="leaderboard-empty">${t('leaderboard.error')}</div>`;
+    });
+}
+function closeLeaderboardPanel() {
+  document.querySelector('#leaderboard-panel')?.classList.add('hidden');
+}
+function renderLeaderboard(players) {
+  const listEl = document.querySelector('#leaderboard-panel .leaderboard-list');
+  if (!listEl) return;
+  if (!players.length) {
+    listEl.innerHTML = `<div class="leaderboard-empty">${t('leaderboard.empty')}</div>`;
+    return;
+  }
+  const ROMAN = ['', 'I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X'];
+  const myName = (localStorage.getItem('pm-name') || '').toLowerCase();
+  const rows = players.map((p, i) => {
+    const r = rankFromElo(p.elo | 0);
+    const sub = ROMAN[r.sub] || String(r.sub);
+    const isMe = (p.name || '').toLowerCase() === myName;
+    return `<div class="leaderboard-row${isMe ? ' you' : ''}">
+      <div class="leaderboard-rank">#${i + 1}</div>
+      <div class="leaderboard-rank-icon" title="${r.tier} ${sub}"><img src="${rankIcon(r.tier)}" alt="${r.tier}" loading="lazy"></div>
+      <div class="leaderboard-name">${escapeHtml(p.name || '')}</div>
+      <div class="leaderboard-elo">${p.elo | 0} ${t('menu.elo')}</div>
+    </div>`;
+  }).join('');
+  listEl.innerHTML = rows;
+}
+function initLeaderboardButton() {
+  const btn = document.querySelector('#leaderboard-btn');
+  const panel = document.querySelector('#leaderboard-panel');
+  const close = document.querySelector('#leaderboard-close');
+  if (!btn || !panel) return;
+  btn.addEventListener('click', (e) => { e.stopPropagation(); openLeaderboardPanel(); });
+  close?.addEventListener('click', closeLeaderboardPanel);
+  // Backdrop click + Escape both close — same pattern as the dex panel.
+  panel.addEventListener('click', (e) => {
+    if (e.target === panel) closeLeaderboardPanel();
+  });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && !panel.classList.contains('hidden')) closeLeaderboardPanel();
+  });
+}
+
 // Run once the DOM is ready (main.js already triggers showTitle on DOMContentLoaded,
-// but the options + dex nodes exist on initial HTML so we can wire them eagerly here).
+// but the options + dex + leaderboard nodes exist on initial HTML so we can wire
+// them eagerly here).
 if (typeof document !== 'undefined') {
-  const init = () => { initOptionsMenu(); initDexButton(); };
+  const init = () => { initOptionsMenu(); initDexButton(); initLeaderboardButton(); };
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
   else init();
 }
@@ -1094,7 +1160,7 @@ function trainerCardContent(trainer, difficulty) {
   return {
     title: trainer.name,
     desc:  t('trainer.reward', reward),
-    body:  `${trainerImg}<div class="trainer-preview">${sprites}</div>`,
+    body:  `${trainerImg}<div class="trainer-preview" data-size="${size}">${sprites}</div>`,
   };
 }
 
@@ -1102,10 +1168,10 @@ function trainerCardContent(trainer, difficulty) {
 // Pick 1 of 2 distinct special events from {berry, trade, job, daycare, lostStash,
 // wildHorde}. Same forbidden-by-state gating as the old special slot. The two picks
 // can NEVER be the same kind. No skip option here — special steps always fire.
-const SPECIAL_KINDS = ['berry', 'trade', 'job', 'daycare', 'lostStash', 'wildHorde'];
+const SPECIAL_KINDS = ['berry', 'trade', 'job', 'daycare', 'lostStash', 'wildHorde', 'collector'];
 function rollSpecialStep() {
   const forbidden = new Set();
-  if (S.teamCount(state) <= 1) { forbidden.add('trade'); forbidden.add('daycare'); }
+  if (S.teamCount(state) <= 1) { forbidden.add('trade'); forbidden.add('daycare'); forbidden.add('collector'); }
   if (S.daycareSlot(state))    forbidden.add('daycare');
   if (!S.hasItemSlot(state))   forbidden.add('lostStash');
   let pool = SPECIAL_KINDS.filter(k => !forbidden.has(k));
@@ -1189,6 +1255,8 @@ function eventCardContent(ev) {
       return { title: t('event.daycare.title'),    desc: t('event.daycare.desc', RUN.daycareLevels), body: eventImg('daycare', 'lucky-egg') };
     case 'lostStash':
       return { title: t('event.lostStash.title'),  desc: t('event.lostStash.desc'),           body: eventImg('lostStash', 'amulet-coin') };
+    case 'collector':
+      return { title: t('event.collector.title'),  desc: t('event.collector.desc'),           body: eventImg('collector', 'nugget') };
     case 'wildHorde': {
       // Same `wild-preview` row as the regular Wild Pokémon card (so the `.is-wild`
       // background art carries over), but with the rolled species repeated six times.
@@ -1234,6 +1302,7 @@ function handleEvent(ev) {
   if (ev.kind === 'daycare')    { startDaycareEvent(); return; }
   if (ev.kind === 'lostStash')  { startLostStashEvent(); return; }
   if (ev.kind === 'wildHorde')  { startWildHordeEvent(); return; }
+  if (ev.kind === 'collector')  { startCollectorEvent(); return; }
 }
 
 // (Wild encounter screen removed — capture is now handled in renderCaptureStep with
@@ -1473,6 +1542,70 @@ function startDaycareEvent() {
 // Lost Stash — pick 1 of 3 random items. Choices are cached on state.currentEvent so a
 // refresh mid-event doesn't reroll the offers. Forbidden-by-state rule in rollEventPair
 // already gates the event behind hasItemSlot(state), so we don't need to re-check here.
+// Collector — drop a team Pokémon into the offer zone to release it for 2×
+// its normal sell value. Like the trade event, but cash-only (no incoming
+// Pokémon). Forbidden by rollSpecialStep when the team is at 1 member.
+function startCollectorEvent() {
+  // Safety guard — if the team somehow dropped to 1 between roll and dispatch
+  // (e.g. mid-step Spirit Pendant), bail back to the adventure step.
+  if (S.teamCount(state) <= 1) {
+    setPhase(`${phaseHeader(t('event.collector.title'), t('collector.teamTooSmall'))}
+      <div style="text-align:center;margin-top:18px;">
+        <button class="primary" id="btn-cont">${t('berry.skip')}</button>
+      </div>`);
+    document.querySelector('#btn-cont').onclick = () => completeAdventureStep();
+    return;
+  }
+  setPhase(`${phaseHeader(t('event.collector.title'), t('collector.subtitle'))}
+    <div class="trade-stage">
+      <div class="trade-side">
+        <div class="phase-subtitle">${t('collector.dropLabel')}</div>
+        <div class="trade-dropzone collector-drop" id="collector-drop">${t('collector.dropPrompt')}</div>
+      </div>
+    </div>
+    <div style="text-align:center;margin-top:14px;">
+      <button id="btn-skip">${t('collector.skip')}</button>
+    </div>
+  `);
+  const drop = document.querySelector('#collector-drop');
+  const promptHtml = t('collector.dropPrompt');
+  // Live price preview while dragging — reads the dragged Pokémon from
+  // window.__pmDrag (mirrored at dragstart in renderTeam) and computes 2×
+  // sellValue. The dropzone shows the value as a "sell-preview" pill, same
+  // styling pattern as the town sell zone.
+  drop.addEventListener('dragover', (e) => {
+    e.preventDefault();
+    const drag = window.__pmDrag;
+    if (!drag || drag.type !== 'pokemon') return;
+    const p = state.team[drag.slot];
+    if (!p || p.inDaycare) return;
+    if (S.teamCount(state) <= 1) return;
+    const price = S.sellValue(p) * 2;
+    drop.classList.add('drag-over');
+    drop.innerHTML = `<span class="sell-preview">${t('town.sellAmount', price)}</span>`;
+  });
+  drop.addEventListener('dragleave', () => {
+    drop.classList.remove('drag-over');
+    drop.innerHTML = promptHtml;
+  });
+  drop.addEventListener('drop', (e) => {
+    e.preventDefault();
+    drop.classList.remove('drag-over');
+    try {
+      const data = JSON.parse(e.dataTransfer.getData('text/plain'));
+      if (data.type !== 'pokemon') return;
+      const p = state.team[data.slot];
+      if (!p || p.inDaycare) return;
+      if (S.teamCount(state) <= 1) return;
+      // Release for double sell value, then advance.
+      state.money += S.sellValue(p) * 2;
+      delete state.team[data.slot];
+      completeAdventureStep();
+    } catch {}
+  });
+  document.querySelector('#btn-skip').onclick = () => completeAdventureStep();
+}
+
 function startLostStashEvent() {
   if (!state.currentEvent.stashItems) {
     const pool = Object.keys(ITEMS);

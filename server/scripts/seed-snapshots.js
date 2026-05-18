@@ -13,6 +13,7 @@
 
 import Database from 'better-sqlite3';
 import path from 'node:path';
+import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -25,6 +26,15 @@ const bucket = (elo) => Math.floor(elo / 100);
 const insert = db.prepare(`INSERT INTO snapshots
   (zone, badges, strikes, elo_bucket, run_id, player_name, team_json, created_at)
   VALUES (?, ?, ?, ?, NULL, ?, ?, ?)`);
+
+// Players-table upsert so the fake names also appear in the leaderboard. ELO
+// uses the player's highest-zone snapshot ELO (final-run value). Idempotent —
+// re-running tops up the ELO if it changed but doesn't duplicate names.
+const upsertPlayer = db.prepare(`INSERT INTO players
+  (id, name, elo, created_at, last_seen, claim_token)
+  VALUES (@id, @name, @elo, @ts, @ts, NULL)
+  ON CONFLICT(id) DO UPDATE SET elo = excluded.elo, last_seen = excluded.last_seen`);
+const findPlayerByName = db.prepare(`SELECT * FROM players WHERE name = ? COLLATE NOCASE`);
 
 // Helper: build a roster entry. Slot, level, species required; rest defaulted by the engine.
 const m = (speciesId, level, slot) => ({ speciesId, level, slot });
@@ -220,8 +230,15 @@ for (const { name, runs } of seedRuns) {
     );
     count++;
   }
+  // Players-table entry — ELO from the final-zone (highest) run so the leaderboard
+  // shows the fake players at their "current" rank. Existing row gets its ELO topped
+  // up; new row is inserted with a fresh UUID and no claim token.
+  const finalElo = runs[runs.length - 1].elo;
+  const existing = findPlayerByName.get(name);
+  const id = existing ? existing.id : crypto.randomUUID();
+  upsertPlayer.run({ id, name, elo: finalElo, ts: now });
 }
 
 console.log(`Seeded ${count} snapshots across ${seedRuns.length} fake players.`);
-console.log('Players:', seedRuns.map(s => s.name).join(', '));
+console.log('Players:', seedRuns.map(s => `${s.name} (ELO ${s.runs[s.runs.length-1].elo})`).join(', '));
 db.close();
