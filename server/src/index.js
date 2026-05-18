@@ -201,14 +201,32 @@ fastify.post('/run/end', {
   config: { requiresAuth: true, rateLimit: { max: 30, timeWindow: '1 minute' } },
 }, async (req) => {
   const { mode, zone, badges, team } = req.body;
-  if (mode === 'ranked' && team && team.length) {
-    writeSnapshot({
-      zone, badges, strikes: 3,
-      elo: req.authPlayer.elo | 0,            // server-side, not client-supplied
-      runId: null, playerName: req.authPlayer.name, team,
-    });
+  // ELO mutation — badge-based, server-authoritative. Mirrors the client's
+  // ELO_BY_BADGES table (phases.js#eloDeltaForRun). Run-end is the only place
+  // ranked ELO moves (per-battle /pvp/result endpoint stays dead — kept for
+  // potential per-fight ELO down the line). Forfeit penalty is its own
+  // separate path via /pvp/forfeit.
+  //   0 badges: -150   1 badge: -100   2 badges:  -50   3 badges:    0
+  //   4 badges:  +75   5 badges (won): +250
+  const ELO_BY_BADGES = [-150, -100, -50, 0, 75, 250];
+  let newElo = req.authPlayer.elo | 0;
+  let delta = 0;
+  if (mode === 'ranked') {
+    const safeBadges = Math.max(0, Math.min(5, badges | 0));
+    delta = ELO_BY_BADGES[safeBadges];
+    if (delta !== 0) {
+      newElo = Math.max(0, (req.authPlayer.elo | 0) + delta);
+      queries.updatePlayerElo.run({ elo: newElo, ts: Date.now(), id: req.authPlayer.id });
+    }
+    if (team && team.length) {
+      writeSnapshot({
+        zone, badges, strikes: 3,
+        elo: newElo,            // post-delta value for matchmaking bucket
+        runId: null, playerName: req.authPlayer.name, team,
+      });
+    }
   }
-  return { ok: true };
+  return { ok: true, newElo, delta };
 });
 
 // ─── /pvp/match ───────────────────────────────────────────────────────────

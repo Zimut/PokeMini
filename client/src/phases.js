@@ -2630,7 +2630,18 @@ function endRun(result) {
   }
 
   saveSnapshot(state, 'runEnd');
-  import('./api.js').then(({ api }) => api.endRun?.(state, result).catch(()=>{}));
+  // Server-authoritative ELO sync — /run/end applies the badge-based delta on
+  // the server and returns the new authoritative ELO. We adopt that value as
+  // the player's true ELO (overwriting our optimistic local update) so the
+  // server's leaderboard and the client's title-screen rank chip stay aligned.
+  // Fire-and-forget: if the server is down, the local optimistic value sticks
+  // until the next online run, at which point the server reconciles.
+  import('./api.js').then(({ api }) => api.endRun?.(state, result).then(r => {
+    if (r && typeof r.newElo === 'number') {
+      state.elo = r.newElo;
+      try { localStorage.setItem('pm-elo', String(r.newElo)); } catch {}
+    }
+  }).catch(()=>{}));
 
   // Shared ELO progress bar — used by both victory and defeat. Each sub-rank spans
   // RANK_BAND ELO, so the bar shows progress within that band. Old position renders
