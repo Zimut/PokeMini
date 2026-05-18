@@ -41,6 +41,11 @@ function teamToRoster(team) {
         abilityOverride: p.ability,
         fainted: !!p.fainted,
         shiny: !!p.shiny,
+        // Held item travels with the snapshot so PvP opponents fight with the same
+        // gear their owner equipped. The engine reads `member.heldItem` in makeBp,
+        // and the battle slot renders the badge so the player can see what their
+        // opponent is running. Null when no item is held.
+        heldItem: p.heldItem || null,
       };
     });
 }

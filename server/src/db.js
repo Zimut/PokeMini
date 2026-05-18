@@ -30,6 +30,24 @@ if (!tableHasColumn('players', 'claim_token')) {
 if (!tableHasColumn('players', 'country')) {
   db.exec('ALTER TABLE players ADD COLUMN country TEXT');
 }
+// One-per-player snapshot rule — enforce on existing data on every startup. Idempotent:
+// once collapsed, the EXISTS subquery finds nothing newer for any row and the DELETE
+// is a no-op. Anonymous snapshots (empty/NULL player_name) are left alone — they don't
+// belong to any "player" the rule can dedupe against. Bounded to recent rows because
+// pruneOld already drops anything older than SNAPSHOT_MAX_AGE_MS, so the table stays
+// small enough for the EXISTS scan to be cheap even on each boot.
+const dupCleanup = db.prepare(`
+  DELETE FROM snapshots
+  WHERE player_name IS NOT NULL AND player_name <> ''
+    AND EXISTS (
+      SELECT 1 FROM snapshots s2
+      WHERE s2.player_name = snapshots.player_name COLLATE NOCASE
+        AND s2.created_at  > snapshots.created_at
+    )
+`).run();
+if (dupCleanup.changes > 0) {
+  console.log(`[snapshots] cleanup: dropped ${dupCleanup.changes} older per-player rows`);
+}
 
 export default db;
 

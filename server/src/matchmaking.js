@@ -32,10 +32,12 @@ function buildGymLeaderRoster(zone) {
 }
 
 const SNAPSHOT_MAX_AGE_MS = 24 * 60 * 60 * 1000;
-// Per-player cap — one player can have at most this many fresh snapshots in the
-// matchmaking pool. New writes past the cap delete the player's oldest rows so
-// the pool stays representative and no single player can flood it.
-const PER_PLAYER_SNAPSHOT_CAP = 20;
+// Per-player cap — each player is represented in the matchmaking pool by exactly
+// ONE snapshot, their most recent. Every new write prunes the player's older rows
+// so they're never both pullable at once. This means a player who just finished
+// a run replaces their previous standing in the pool with that new team — the
+// pool reflects current skill instead of historical attempts.
+const PER_PLAYER_SNAPSHOT_CAP = 1;
 
 // Cascade — each pass relaxes more filters within the SAME zone. We never widen
 // across zones because the level difference between zones (≈7 levels per step)

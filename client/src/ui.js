@@ -710,6 +710,18 @@ export function renderTeam(state, opts = {}) {
     } else {
       div.innerHTML = pokemonCardInnerHTML(p);
       if (p.fainted) div.classList.add('fainted');
+      // Held item hover tooltip — upgrade the bare-bones native `title` set inside
+      // pokemonCardInnerHTML to the proper attachTooltip widget so the player gets
+      // the styled chip with name + description on hover instead of the OS tooltip.
+      // Native title is also cleared so the two don't fight each other.
+      const heldBadge = div.querySelector('.slot-vitamin-badge');
+      if (heldBadge && p.heldItem) {
+        const def = HELD_ITEMS[p.heldItem];
+        if (def) {
+          heldBadge.removeAttribute('title');
+          attachTooltip(heldBadge, def.name, def.desc || '');
+        }
+      }
       if (p.inDaycare) {
         // Daycare Pokémon stay on the team display but greyed out — they don't deploy in
         // battle and can't be released/sold/given items until the next adventure begins.

@@ -2121,7 +2121,18 @@ function showBattleAnimation(snapA, snapB, result, opponentLabel, callback) {
     // This places the HP bar visually close to the Pokémon — the previous order made
     // the bar the first flex child, so any margin-top tweak just moved the whole stack
     // together, never changing the bar↔sprite gap.
+    // Held-item badge — shown for BOTH sides so the player can see what their opponent
+    // is running, not just their own team. Imported from data.js via the HELD_ITEMS
+    // registry; pulls the same sprite slug as the team-manager badge so the icon stays
+    // visually consistent. Native `title` is bare-bones fallback for when the rich
+    // tooltip hasn't been wired up (attachAllTooltips runs after paintArena).
+    const heldDef = u.heldItem ? HELD_ITEMS[u.heldItem] : null;
+    const heldIconUrl = heldDef && heldDef.sprite ? ITEM_ICON_URL(heldDef.sprite) : null;
+    const heldBadge = heldDef && heldIconUrl
+      ? `<div class="battle-held-badge" data-held="${u.heldItem}" title="${heldDef.name}"><img src="${heldIconUrl}" alt="${heldDef.name}"></div>`
+      : '';
     return `
+      ${heldBadge}
       <div class="status-row">${statusIcons(u)}</div>
       <div class="hpbar" style="--segs:${segs}">
         <div class="hpbar-fill ${hpClass}" style="width:${hpPct}%"></div>
@@ -2161,6 +2172,20 @@ function showBattleAnimation(snapA, snapB, result, opponentLabel, callback) {
       // hand, and the persistent stat buffs the card already shows via the
       // pokemonCardInnerHTML diff badges.
       attachTooltip(el, '', () => `<div class="slot display">${pokemonCardInnerHTML(u)}</div>`, { rich: true });
+      // Held-item badge tooltip — fires when hovering directly on the icon. Strip the
+      // native title so the OS tooltip doesn't shadow our styled chip. Read the held id
+      // from the badge's data-held so a held-item swap mid-battle (Smoke Ball doesn't
+      // swap items, but future ones might) stays in sync. Falls back silently if the
+      // badge isn't present (Pokémon isn't holding anything).
+      const heldEl = el.querySelector('.battle-held-badge');
+      if (heldEl) {
+        const heldId = heldEl.dataset.held;
+        const def = heldId ? HELD_ITEMS[heldId] : null;
+        if (def) {
+          heldEl.removeAttribute('title');
+          attachTooltip(heldEl, def.name, def.desc || '');
+        }
+      }
     });
   }
 
