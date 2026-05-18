@@ -2374,6 +2374,18 @@ function showBattleAnimation(snapA, snapB, result, opponentLabel, callback) {
         // (it rewrites the slot HTML); we then add the class and let it auto-clear.
         case 'applyBurn':   byUid[e.who] && (byUid[e.who].burn  += e.amount); refreshSlot(e.who); flash(e.who, 'just-applied', 320); await wait(step * 0.18); break;
         case 'applyPoison': byUid[e.who] && (byUid[e.who].poison += e.amount); refreshSlot(e.who); flash(e.who, 'just-applied', 320); await wait(step * 0.18); break;
+        // Stat-mod application — mirrors the server-side statMods.* multiplier
+        // change on the animation snapshot so the tooltip's buff badges reflect
+        // current effective ATK/SPD. The engine's bumpStatMod helper emits one
+        // of these every time any ability bumps a stat (chlorophyll, intimidate,
+        // coil, tailwind, etc.). No timing pause — the corresponding 'ability'
+        // shout already provided the visual beat.
+        case 'statMod': {
+          const u = byUid[e.who]; if (!u) break;
+          if (e.stat === 'atk') u.atk = Math.max(1, Math.round(u.atk * e.factor));
+          else if (e.stat === 'spd') u.spd = Math.max(1, Math.round(u.spd * e.factor));
+          break;
+        }
         case 'applyStun': {
           const u = byUid[e.who]; if (u) { if (e.dur > u.stun) u.stun = e.dur; refreshSlot(e.who); flash(e.who, 'just-applied', 320); }
           await wait(step * 0.25);

@@ -641,9 +641,12 @@ export function pokemonCardInnerHTML(p) {
     baseStats.atk = Math.round(baseStats.atk * m);
     baseStats.spd = Math.round(baseStats.spd * m);
   }
+  // Show +N green for buffs, -N red for debuffs. Hidden at exactly 0.
   const buff = (cur, base) => {
     const d = (cur | 0) - (base | 0);
-    return d > 0 ? `<span class="stat-buff">+${d}</span>` : '';
+    if (d > 0) return `<span class="stat-buff">+${d}</span>`;
+    if (d < 0) return `<span class="stat-buff stat-debuff">${d}</span>`;
+    return '';
   };
   const hpBuff  = buff(hpMax, baseStats.hp);
   const atkBuff = buff(p.atk, baseStats.atk);

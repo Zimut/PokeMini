@@ -857,6 +857,8 @@ button.primary:hover { background: var(--accent-deep); border-color: var(--accen
   font-size: 0.95em;
   letter-spacing: 0.02em;
 }
+/* Negative variant — debuffs from intimidate, viceGrip, constrict, arenaTrap. */
+.stat-buff.stat-debuff { color: var(--warn); }
 
 .slot-ability {
   font-size: 11px; color: var(--ink); line-height: 1.35;

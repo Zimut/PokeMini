@@ -95,6 +95,21 @@ function shout(unit, name, log) {
   log.push({ t: 'ability', name, who: uid(unit), side: unit.side, slot: unit.slot });
 }
 
+// Mutate a unit's statMods.{atk|spd} multiplier AND emit a log event so the
+// animation snapshot mirrors the same change. Centralizing this keeps the two
+// layers (server-side battle sim + client-side animation snapshot) in lockstep
+// — anywhere the engine bumps a stat mod, the tooltip will show the resulting
+// buff/debuff via the pokemonCardInnerHTML diff badges. Without this hook,
+// abilities like Chlorophyll/Tailwind/Intimidate would silently buff/debuff
+// stats server-side while the animation snapshot stayed at battle-start values.
+function bumpStatMod(unit, stat, factor, log) {
+  if (!unit || !unit.statMods) return;
+  unit.statMods[stat] *= factor;
+  if (log) {
+    log.push({ t: 'statMod', who: uid(unit), side: unit.side, slot: unit.slot, stat, factor });
+  }
+}
+
 // Heal a target by `amount`. Caps at hpMax. Emits a heal event so the UI animates.
 // If bumpMax is true (Stamina), the heal also raises max HP and we log that.
 // `source` is the unit credited for the heal (used by the in-battle damage counter UI).
@@ -492,15 +507,15 @@ function doAttack(attacker, attackerTeam, enemyTeam, rng, log) {
       if (attacker.abilityId === 'coil') {
         const pct = [5, 10][attacker.species.stage - 1];
         shout(attacker, `ATK +${pct}%`, log);
-        attacker.statMods.atk *= 1 + pct / 100;
+        bumpStatMod(attacker, 'atk', 1 + pct / 100, log);
       }
       if (attacker.abilityId === 'constrict') {
         shout(target, 'SPD -50%', log);
-        target.statMods.spd *= 0.50;
+        bumpStatMod(target, 'spd', 0.50, log);
       }
       if (attacker.abilityId === 'viceGrip') {
         shout(target, 'ATK -15%', log);
-        target.statMods.atk *= 0.85;
+        bumpStatMod(target, 'atk', 0.85, log);
       }
       if (attacker.abilityId === 'sniper' && rng.roll(attacker.species.stage === 2 ? 20 : 10)) {
         const mult = attacker.species.stage === 2 ? 4 : 3;
@@ -596,7 +611,7 @@ function dealDamage(attacker, target, dmg, atkTeam, defTeam, rng, log, opts = {}
       if (u.abilityId === 'rivalry') {
         const pct = [2, 4, 5][u.species.stage - 1];
         shout(u, `ATK +${pct}%`, log);
-        u.statMods.atk *= 1 + pct / 100;
+        bumpStatMod(u, 'atk', 1 + pct / 100, log);
       }
     }
     // Stamina/Rivalry on self
@@ -608,7 +623,7 @@ function dealDamage(attacker, target, dmg, atkTeam, defTeam, rng, log, opts = {}
     if (target.abilityId === 'rivalry' && target.stun === 0) {
       const pct = [2, 4, 5][target.species.stage - 1];
       shout(target, `ATK +${pct}%`, log);
-      target.statMods.atk *= 1 + pct / 100;
+      bumpStatMod(target, 'atk', 1 + pct / 100, log);
     }
   }
 
@@ -629,7 +644,7 @@ function onFaint(victim, killer, killerTeam, victimTeam, rng, log) {
   if (killer && killer.abilityId === 'moxie' && !killer.fainted && killer.stun === 0) {
     const pct = [15, 30][killer.species.stage - 1];
     shout(killer, `ATK +${pct}%`, log);
-    killer.statMods.atk *= 1 + pct / 100;
+    bumpStatMod(killer, 'atk', 1 + pct / 100, log);
   }
   // Aftermath — victim retaliates (Magic Guard blocks non-direct damage)
   if (victim.abilityId === 'aftermath' && killer && !killer.fainted && killer.abilityId !== 'magicGuard') {
@@ -657,7 +672,7 @@ function onFaint(victim, killer, killerTeam, victimTeam, rng, log) {
     if (u.abilityId === 'angerPoint') {
       const pct = [15, 30][u.species.stage - 1];
       shout(u, `ATK +${pct}%`, log);
-      u.statMods.atk *= 1 + pct / 100;
+      bumpStatMod(u, 'atk', 1 + pct / 100, log);
     }
   }
 }
@@ -709,7 +724,7 @@ function onBattleStart(teamA, teamB, rng, log) {
           const target = enemy.byPos[COL_FRONT[col]];
           if (target && !target.fainted) {
             shout(target, `ATK -${Math.round(pct * 100)}%`, log);
-            target.statMods.atk *= 1 - pct;
+            bumpStatMod(target, 'atk', 1 - pct, log);
           }
           return true;
         }
@@ -720,7 +735,7 @@ function onBattleStart(teamA, teamB, rng, log) {
             const t = enemy.byPos[slot];
             if (t && !t.fainted) {
               shout(t, `SPD -${Math.round(pct * 100)}%`, log);
-              t.statMods.spd *= 1 - pct;
+              bumpStatMod(t, 'spd', 1 - pct, log);
             }
           }
           return true;
@@ -986,7 +1001,7 @@ function onTurnEnd(team, enemyTeam, rng, log, turnNumber) {
           const a = team.byPos[row + (col + dc)];
           if (a && !a.fainted) {
             shout(a, `ATK +${Math.round(buff * 100)}%`, log);
-            a.statMods.atk *= 1 + buff;
+            bumpStatMod(a, 'atk', 1 + buff, log);
           }
         }
         return true;
@@ -994,7 +1009,7 @@ function onTurnEnd(team, enemyTeam, rng, log, turnNumber) {
       case 'chlorophyll': {
         const pct = [5, 8, 12][u.species.stage - 1];
         shout(u, `ATK +${pct}%`, log);
-        u.statMods.atk *= 1 + pct / 100;
+        bumpStatMod(u, 'atk', 1 + pct / 100, log);
         return true;
       }
       case 'naturalCure': {
