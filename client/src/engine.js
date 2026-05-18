@@ -43,6 +43,10 @@ function makeBp(member, sideKey, slot) {
   let hpMax = stats.hp + (member.hpBonus || 0);
   let atk   = stats.atk + (member.atkBonus || 0);
   let spd   = stats.spd + (member.spdBonus || 0);
+  // Quick Claw held item — flat +50 SPD while held. Applied to base spd so it shows up
+  // in the tooltip's stat readout and feeds into both the turn order sort and any
+  // SPD-derived ability (Rollout's flat damage bonus, etc.).
+  if (member.heldItem === 'quickClaw') spd += 50;
   // Honor a pre-existing fainted state passed in via the roster (e.g., a Pokémon that
   // fainted in a prior trainer battle and hasn't been revived). Those start the battle
   // already KO'd: visible in the arena but greyed out and unable to act.
@@ -65,6 +69,7 @@ function makeBp(member, sideKey, slot) {
     coilStacks: 0,
     skipTurns: 0,                           // for Sky High etc. (legacy — kept for any future ability that needs to skip a turn)
     untargetable: 0,                        // Sky High — can attack but enemies can't target it
+    heldItem: member.heldItem || null,      // optional held item id; engine reads it in calc/deal/turnEnd hooks
     flagged: {},                            // per-ability flags
     onTurnFlags: {},
   };
@@ -95,6 +100,15 @@ function shout(unit, name, log) {
   log.push({ t: 'ability', name, who: uid(unit), side: unit.side, slot: unit.slot });
 }
 
+// Effect Orb held-item multiplier. Doubles the magnitude of burn/poison stacks produced by
+// the source's own abilities (blaze, poisonPoint, flameBody, toxicSpike, willOWisp,
+// toxicSweat). Pass the SOURCE of the status — the unit whose ability is producing the
+// effect — not the target receiving it. Returns 1 when the source isn't an Effect Orb
+// holder, so it's safe to multiply unconditionally at every status-spawning call site.
+function effectOrbMult(source) {
+  return source && source.heldItem === 'effectOrb' ? 2 : 1;
+}
+
 // Mutate a unit's statMods.{atk|spd} multiplier AND emit a log event so the
 // animation snapshot mirrors the same change. Centralizing this keeps the two
 // layers (server-side battle sim + client-side animation snapshot) in lockstep
@@ -104,6 +118,11 @@ function shout(unit, name, log) {
 // stats server-side while the animation snapshot stayed at battle-start values.
 function bumpStatMod(unit, stat, factor, log) {
   if (!unit || !unit.statMods) return;
+  // Clear Amulet held item — fully immune to stat DEBUFFS (factor < 1). Buffs still apply.
+  // Keeps the log silent on blocked debuffs to avoid spamming "Clear Amulet!" every time an
+  // enemy intimidate/constrict/etc. would have landed; the absence of the statMod event is
+  // the signal. (If we ever want a visual cue, emit a 'heldItem' event here.)
+  if (factor < 1 && unit.heldItem === 'clearAmulet') return;
   unit.statMods[stat] *= factor;
   if (log) {
     log.push({ t: 'statMod', who: uid(unit), side: unit.side, slot: unit.slot, stat, factor });
@@ -132,7 +151,7 @@ function heal(target, amount, log, bumpMax = false, source = null) {
 // Status immunities — a single source of truth.
 const STUN_IMMUNE_ABILITIES = new Set(['soundproof','limber','rockHead']);
 const ALL_STATUS_IMMUNE_ABILITIES = new Set(['rockHead']);
-function canBeStunned(target)  { return !STUN_IMMUNE_ABILITIES.has(target.abilityId); }
+function canBeStunned(target)  { return !STUN_IMMUNE_ABILITIES.has(target.abilityId) && target.heldItem !== 'safetyGoggles'; }
 function canBeBurned(target)   { return !ALL_STATUS_IMMUNE_ABILITIES.has(target.abilityId) && target.abilityId !== 'magicGuard'; }
 function canBePoisoned(target) { return !ALL_STATUS_IMMUNE_ABILITIES.has(target.abilityId) && target.abilityId !== 'magicGuard'; }
 
@@ -277,6 +296,9 @@ function calcDamage(attacker, target, rng, mods = {}) {
     const stage = attacker.species.stage || 1;
     critPct = [30, 45, 60][stage - 1] || 30;
   }
+  // Lucky Punch held item — flat +10% crit chance on top of whatever the ability rolled
+  // (so Cross Chop + Lucky Punch reads as base 30/45/60 + 10).
+  if (attacker.heldItem === 'luckyPunch') critPct += 10;
   const crit = rng.roll(critPct);
   const critMult = crit ? 2 : 1;
 
@@ -339,6 +361,11 @@ function calcDamage(attacker, target, rng, mods = {}) {
       dmg *= 1 - [0.08, 0.15][u.species.stage - 1];
     }
   }
+
+  // Expert Belt held item — +20% damage when the hit is super-effective (tmult > 1).
+  if (attacker.heldItem === 'expertBelt' && tmult > 1) dmg *= 1.2;
+  // Life Orb held item — flat +30% damage on every attack. Self-recoil is paid in doAttack.
+  if (attacker.heldItem === 'lifeOrb') dmg *= 1.3;
 
   return { dmg: Math.max(1, Math.floor(dmg)), crit, tmult };
 }
@@ -407,6 +434,13 @@ function doAttack(attacker, attackerTeam, enemyTeam, rng, log) {
         continue;
       }
       // (Phase is replaced by Hex — Gastly line is now offensive, handled below.)
+    }
+    // Bright Powder held item — 8% flat chance to evade the incoming hit. Rolls even on
+    // stunned targets (the item works regardless of action state, unlike Sand Veil).
+    if (target.heldItem === 'brightPowder' && rng.roll(8)) {
+      shout(target, 'Evade!', log);
+      log.push({ t:'dodge', who: uid(target), side: target.side, slot: target.slot });
+      continue;
     }
     let { dmg, crit, tmult } = calcDamage(attacker, target, rng);
     if (hits === 2) dmg = Math.max(1, Math.floor(dmg * 0.6));
@@ -489,12 +523,14 @@ function doAttack(attacker, attackerTeam, enemyTeam, rng, log) {
     const attackEncoreReps = 1 + mimicBoost(attacker, attackerTeam);
     for (let r = 0; r < attackEncoreReps; r++) {
       if (attacker.abilityId === 'blaze' && !attacker.stun) {
-        const amt = [4,8,12][attacker.species.stage - 1];
+        // Effect Orb doubles burn ability output — applied via effectOrbMult so the shout
+        // text reflects the actual stack landed on the target.
+        const amt = [4,8,12][attacker.species.stage - 1] * effectOrbMult(attacker);
         shout(attacker, `Burn ${amt}`, log);
         applyBurn(target, amt, log);
       }
       if (attacker.abilityId === 'poisonPoint' && !attacker.stun && attacker.species.id <= 15) {
-        const amt = [2,3,5][attacker.species.stage - 1];
+        const amt = [2,3,5][attacker.species.stage - 1] * effectOrbMult(attacker);
         shout(attacker, `Poison ${amt}`, log);
         applyPoison(target, amt, log);
       }
@@ -524,11 +560,50 @@ function doAttack(attacker, attackerTeam, enemyTeam, rng, log) {
         dealDamage(attacker, target, extra, attackerTeam, enemyTeam, rng, log, { triggerOnHit: false });
       }
     }
+    // King's Rock held item — 10% chance per landed hit to stun the target for 1 turn.
+    // Skipped if target is already fainted (parental bond second hit on a KO'd target).
+    if (attacker.heldItem === 'kingsRock' && !target.fainted && rng.roll(10)) {
+      shout(target, 'Stun 1', log);
+      applyStun(target, 1, log, { attackerTeam, enemyTeam, rng });
+    }
+  }
+  // Life Orb held item — recoil 10% max HP once per attack action (not per hit), so
+  // Parental Bond doesn't double-tax the holder. Self-damage flagged as non-attack and
+  // routed through a manual hp subtraction so it doesn't trigger Rocky Helmet/onHit cycles.
+  if (attacker.heldItem === 'lifeOrb' && !attacker.fainted) {
+    const recoil = Math.max(1, Math.floor(attacker.hpMax * 0.10));
+    attacker.hp -= recoil;
+    shout(attacker, `-${recoil} HP`, log);
+    if (log) log.push({ t:'hit', who: uid(attacker), side: attacker.side, slot: attacker.slot,
+                        dmg: recoil, crit: false, tmult: 1, source: 'lifeOrb', from: null });
+    if (attacker.hp <= 0) {
+      attacker.hp = 0; attacker.fainted = true;
+      log.push({ t:'faint', who: uid(attacker), side: attacker.side, slot: attacker.slot,
+                 name: attacker.name, cause: 'lifeOrb' });
+    }
+  }
+  // Metronome held item — +5% ATK after every attack action (uncapped stacks, so by
+  // turn 5 the holder is at 1.05^5 ≈ 1.28× base ATK). Fires once per attack call so
+  // Parental Bond's two hits still count as a single +5% bump, not +10%.
+  if (attacker.heldItem === 'metronome' && !attacker.fainted) {
+    bumpStatMod(attacker, 'atk', 1.05, log);
   }
 }
 
 function dealDamage(attacker, target, dmg, atkTeam, defTeam, rng, log, opts = {}) {
   if (target.fainted) return;
+  // Resist Band held item — fully negates the FIRST damage tick this Pokémon takes per
+  // battle. Reflected damage (Rocky Helmet) is excluded so the holder can still benefit
+  // from its own Helmet against the negated attacker. Self-damage like Life Orb recoil
+  // doesn't pass through this branch at all (it's a manual hp subtraction in doAttack).
+  if (!opts.reflected && target.heldItem === 'resistBand' && !target.flagged.resistBandUsed) {
+    target.flagged.resistBandUsed = true;
+    if (log) {
+      shout(target, 'Negated!', log);
+      log.push({ t:'dodge', who: uid(target), side: target.side, slot: target.slot });
+    }
+    return;
+  }
   // Every damage tick that runs through dealDamage emits a 'hit' so the UI can show a popup.
   // `from` credits the attacker for the in-battle damage counter UI (regardless of source
   // tag: direct attack, splash, sniper bonus, aftermath reflect, explosion, etc.).
@@ -568,6 +643,16 @@ function dealDamage(attacker, target, dmg, atkTeam, defTeam, rng, log, opts = {}
       shout(attacker, `Return ${refl} DMG`, log);
       dealDamage(target, attacker, refl, defTeam, atkTeam, rng, log, { reflected: true, triggerOnHit: false });
     }
+    // Rocky Helmet HELD ITEM — independent of (and stackable with) the ability of the same
+    // name. Deals 5% of the ATTACKER's max HP back as recoil. Different math from the ability
+    // (which is % of damage taken), so it's still meaningful on tanks who dodge often or
+    // mitigate hits. Magic Guard immunity carries over for consistency with the ability.
+    if (target.heldItem === 'rockyHelmet' && !opts.reflected && attacker && attacker !== target
+        && attacker.abilityId !== 'magicGuard' && !attacker.fainted) {
+      const recoil = Math.max(1, Math.floor(attacker.hpMax * 0.05));
+      shout(attacker, `Spikes ${recoil}`, log);
+      dealDamage(target, attacker, recoil, defTeam, atkTeam, rng, log, { reflected: true, triggerOnHit: false });
+    }
     // (Static is now an OFFENSIVE ability — handled in doAttack, not here.)
     if (target.abilityId === 'effectSpore' && rng.roll([25, 50][target.species.stage - 1])) {
       // Stun-only effect (no longer rolls between stun/poison). The target's effectSpore
@@ -578,12 +663,15 @@ function dealDamage(attacker, target, dmg, atkTeam, defTeam, rng, log, opts = {}
       applyStun(attacker, dur, log, { attackerTeam: defTeam, enemyTeam: atkTeam, rng });
     }
     if (target.abilityId === 'flameBody') {
-      shout(attacker, 'Burn 3', log);
-      applyBurn(attacker, 3, log);
+      // Effect Orb on the flameBody holder doubles the burn stack landed on the attacker.
+      const amt = 3 * effectOrbMult(target);
+      shout(attacker, `Burn ${amt}`, log);
+      applyBurn(attacker, amt, log);
     }
     if (target.abilityId === 'toxicSpike') {
       // Always triggers — no chance gate. Poison stacks at 2 (Horsea) / 4 (Seadra).
-      const amt = [2, 4][target.species.stage - 1];
+      // Effect Orb on the holder doubles the poison stack.
+      const amt = [2, 4][target.species.stage - 1] * effectOrbMult(target);
       shout(attacker, `Poison ${amt}`, log);
       applyPoison(attacker, amt, log);
     }
@@ -629,6 +717,38 @@ function dealDamage(attacker, target, dmg, atkTeam, defTeam, rng, log, opts = {}
 
   // Check faint
   if (target.hp <= 0) {
+    // Smoke Ball held item — one-time per-battle save. If the holder is in the FRONT row
+    // and has a living ally directly behind in the same column, swap their slot positions
+    // and restore the holder to 1 HP (skipping the faint entirely). Back-row holders have
+    // nothing "behind" them, so the item silently doesn't help there — the rationale is
+    // baked into the item's flavor (smoke screen to retreat). The flag is set even on a
+    // successful swap so the same Pokémon can't get saved twice in one battle.
+    if (target.heldItem === 'smokeBall' && !target.flagged.smokeBallUsed && isFront(target.slot)) {
+      const col = colOf(target.slot);
+      const ally = defTeam.byPos[COL_BACK[col]];
+      if (ally && !ally.fainted && ally !== target) {
+        target.flagged.smokeBallUsed = true;
+        target.hp = 1;
+        shout(target, 'Smoke Ball!', log);
+        // Emit a heal event so the animation snapshot restores HP to 1 visually — the
+        // preceding 'hit' event already deducted the full damage from the animation's
+        // u.hp, so without this heal the post-swap HP bar would render empty. Heal
+        // amount of 1 ensures the bar shows a single tick (matching engine state).
+        log.push({ t:'heal', who: uid(target), side: target.side, slot: target.slot, amount: 1, from: uid(target) });
+        // Same swap pattern as Magnet Pull — update byPos refs and slot strings on
+        // both units, then emit a 'swap' event so the animation can mirror the move.
+        const fromSlot = target.slot;
+        const toSlot   = ally.slot;
+        defTeam.byPos[fromSlot] = ally;   ally.slot   = fromSlot;
+        defTeam.byPos[toSlot]   = target; target.slot = toSlot;
+        log.push({
+          t:'swap', side: target.side,
+          a: uid(target), aFrom: fromSlot, aTo: toSlot,
+          b: uid(ally),   bFrom: toSlot,   bTo: fromSlot,
+        });
+        return;  // skip the faint
+      }
+    }
     target.hp = 0;
     target.fainted = true;
     log.push({ t:'faint', who: uid(target), side: target.side, slot: target.slot, name: target.name });
@@ -777,11 +897,14 @@ function onBattleStart(teamA, teamB, rng, log) {
               u.hpMax = ally.hpMax; u.hp = ally.hp;
               u.atk = ally.atk; u.spd = ally.spd;
               u.abilityId = ally.abilityId;
-              // Emit a log event so the animation can swap Ditto's sprite to the copied
-              // ally's species and overlay the purple "imposter" tint.
+              // Carry the copied stats on the log event so the animation snapshot
+              // mirrors the full transformation — sprite swap AND the new
+              // hpMax/hp/atk/spd values. Without these the tooltip would keep
+              // showing Ditto's original (much weaker) stats post-imposter.
               log.push({
                 t: 'imposter', who: uid(u), side: u.side, slot: u.slot,
                 copiedSpeciesId: ally.species.id, copiedName: ally.name,
+                hpMax: ally.hpMax, hp: ally.hp, atk: ally.atk, spd: ally.spd,
               });
             }
           }
@@ -794,8 +917,11 @@ function onBattleStart(teamA, teamB, rng, log) {
           const myRow = isFront(u.slot) ? 'F' : 'B';
           const pctLabel = `HP +${Math.round(pct * 100)}%`;
           shout(u, pctLabel, log);
+          // Use heal(..., bumpMax=true) instead of mutating hpMax directly — that
+          // way the animation snapshot picks up the increase via the 'heal' event
+          // handler and the tooltip's HP buff badge stays accurate.
           const selfBonus = Math.floor(u.hpMax * pct);
-          u.hpMax += selfBonus; u.hp += selfBonus;
+          heal(u, selfBonus, log, true, u);
           for (const dc of [-1, +1]) {
             const c = col + dc;
             if (c < 1 || c > 3) continue;
@@ -803,7 +929,7 @@ function onBattleStart(teamA, teamB, rng, log) {
             if (ally && !ally.fainted && ally !== u) {
               shout(ally, pctLabel, log);
               const bonus = Math.floor(ally.hpMax * pct);
-              ally.hpMax += bonus; ally.hp += bonus;
+              heal(ally, bonus, log, true, u);
             }
           }
           return true;
@@ -816,6 +942,11 @@ function onBattleStart(teamA, teamB, rng, log) {
             shout(e, `HP -${cutPct}%`, log);
             const lost = Math.floor(e.hpMax * cutPct / 100);
             e.hpMax -= lost; e.hp = Math.max(1, e.hp - lost);
+            // Mirror the hpMax + current-hp shrink on the animation snapshot so
+            // the tooltip's HP buff badge shows the (negative) delta vs the
+            // species-baseline. Without this, predatorsMark silently lowered
+            // enemy HP server-side but the tooltip kept showing pre-shrink hpMax.
+            log.push({ t: 'hpMaxCut', who: uid(e), side: e.side, slot: e.slot, amount: lost });
           }
           return true;
         }
@@ -1064,7 +1195,7 @@ function onTurnEnd(team, enemyTeam, rng, log, turnNumber) {
       case 'toxicSweat': {
         const alive = enemyTeam.units.filter(x => !x.fainted);
         if (alive.length) {
-          const amt = [3, 5][u.species.stage - 1];
+          const amt = [3, 5][u.species.stage - 1] * effectOrbMult(u);
           const t = rng.pick(alive);
           shout(t, `Poison ${amt}`, log);
           applyPoison(t, amt, log);
@@ -1081,6 +1212,16 @@ function onTurnEnd(team, enemyTeam, rng, log, turnNumber) {
       const triggered = runTurnEnd(u);
       if (triggered) pingPhotosynthesis(u, team, enemyTeam, rng, log);
     }
+  }
+  // Leftovers held item — passive 5% max HP heal at the end of every turn. Fires for
+  // stunned holders too (the item works independent of action state). Routed through
+  // heal() so it emits the standard heal event and the animation snapshot picks it up.
+  for (const u of team.units) {
+    if (u.fainted) continue;
+    if (u.heldItem !== 'leftovers') continue;
+    const amt = Math.max(1, Math.floor(u.hpMax * 0.05));
+    const healed = heal(u, amt, log, false, u);
+    if (healed > 0) shout(u, `+${healed} HP`, log);
   }
 }
 
@@ -1112,7 +1253,7 @@ function onTurnStart(team, enemyTeam, rng, log, turnNumber) {
     if (u.abilityId === 'willOWisp') {
       const backAlive = enemyTeam.units.filter(x => !x.fainted && !isFront(x.slot));
       if (backAlive.length) {
-        const amt = [4, 7][u.species.stage - 1];
+        const amt = [4, 7][u.species.stage - 1] * effectOrbMult(u);
         const t = rng.pick(backAlive);
         shout(t, `Burn ${amt}`, log);
         applyBurn(t, amt, log);

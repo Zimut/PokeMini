@@ -120,7 +120,7 @@ export function makeInstance(speciesId, level) {
     ability: curSp.ability,
     hpBonus: 0, atkBonus: 0, spdBonus: 0,
     fainted: false,
-    xVitamin: false,         // single-battle buff
+    heldItem: null,          // one held item per Pokémon — see data.js#HELD_ITEMS
     shiny,
   };
 }

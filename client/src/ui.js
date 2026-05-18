@@ -1,5 +1,5 @@
 // UI helpers: rendering HUD, tooltips, drag-and-drop, sprite URLs.
-import { SPECIES, ITEMS, BERRIES, ZONES, rankFromElo, RUN } from './data.js';
+import { SPECIES, ITEMS, BERRIES, ZONES, rankFromElo, RUN, HELD_ITEMS } from './data.js';
 import { t } from './i18n.js';
 import { actualStats } from './engine.js';
 
@@ -45,6 +45,12 @@ const RANK_SLUG = {
 };
 export function itemIcon(id)  { const s = ITEM_SLUG[id] || BERRY_SLUG[id]; return s ? ITEM_ICON_URL(s) : null; }
 export function rankIcon(tier){ return ITEM_ICON_URL(RANK_SLUG[tier] || 'poke-ball'); }
+// Held items map to PokéAPI item icons via the `sprite` slug in HELD_ITEMS.
+// Returns null for unknown ids so the caller can hide the badge.
+export function heldItemIcon(id) {
+  const def = HELD_ITEMS[id];
+  return def && def.sprite ? ITEM_ICON_URL(def.sprite) : null;
+}
 
 const $ = (s) => document.querySelector(s);
 const $$ = (s) => document.querySelectorAll(s);
@@ -621,11 +627,13 @@ export function pokemonCardInnerHTML(p) {
   const hpClass = hp / hpMax < 0.3 ? ' hp-low' : '';
   const hpLabel = (hp === hpMax) ? `${hpMax}` : `${hp}/${hpMax}`;
   const abilityId = p.ability || sp.ability;
-  // X-Vitamin badge — appears top-left of the slot card while p.xVitamin is true
-  // (set by the item, cleared by runBattle when the buff is consumed). Reuses the
-  // PokéAPI x-attack item icon since that's the item's chosen visual identity.
-  const xVitaminBadge = p.xVitamin
-    ? `<div class="slot-vitamin-badge" title="X-Vitamin active — next battle"><img src="${ITEM_ICON_URL('x-attack')}" alt="X-Vitamin"></div>`
+  // Held item badge — top-left of the slot card. Reads from p.heldItem and
+  // looks up the PokéAPI sprite slug in HELD_ITEMS. Shows nothing when the
+  // Pokémon isn't holding anything. Tooltip carries the item name + flavor.
+  const heldDef = p.heldItem ? HELD_ITEMS[p.heldItem] : null;
+  const heldIcon = heldDef ? heldItemIcon(p.heldItem) : null;
+  const xVitaminBadge = heldDef && heldIcon
+    ? `<div class="slot-vitamin-badge" title="${heldDef.name} — ${heldDef.desc || ''}"><img src="${heldIcon}" alt="${heldDef.name}"></div>`
     : '';
   // Stat buff badges — compute the "natural" baseline from species + level
   // (with shiny multiplier baked in) and show `+N` in green next to each stat
@@ -738,6 +746,11 @@ export function renderTeam(state, opts = {}) {
         const data = JSON.parse(e.dataTransfer.getData('text/plain'));
         if (data.type === 'pokemon' && data.slot !== slot) opts.onSwap?.(data.slot, slot);
         else if (data.type === 'item') opts.onUseItem?.(data.itemId, { type:'pokemon', slot });
+        // Held items are attached directly to the Pokémon (one per Pokémon). Source tag
+        // distinguishes shop buys (charge $300 + remove from offered list) from heldStash
+        // free claims (auto-complete the adventure step). The phase-level callback owns
+        // both branches via opts.onAttachHeldItem.
+        else if (data.type === 'heldItem') opts.onAttachHeldItem?.(data, slot);
       } catch {}
     });
     grid.appendChild(div);

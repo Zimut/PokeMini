@@ -198,9 +198,9 @@ export function speciesByName(name) {
 // nothing ever stays fainted between fights now, so the item had no use case.
 // The `evosoda` id is kept for save compatibility; the display name was rebranded
 // to "Rare Candy" — see i18n.js (`item.evosoda.name`) and the ui.js fallback.
+// X-Vitamin moved to HELD_ITEMS — see below.
 export const ITEMS = {
   tradeCard:  { id:'tradeCard', name:'Trade Card', cost:200, target:'tradeEvent' },
-  xVitamin:   { id:'xVitamin',  name:'X-Vitamin',  cost:300, target:'pokemon' },
   greatBall:  { id:'greatBall', name:'Great Ball', cost:300, target:'wildEvent' },
   evosoda:    { id:'evosoda',   name:'Rare Candy', cost:500, target:'pokemon' },
   tm:         { id:'tm',        name:'TM',         cost:600, target:'pokemon' },
@@ -208,6 +208,51 @@ export const ITEMS = {
   lure:       { id:'lure',      name:'Lure',       cost:300, target:'wildEvent' },
   spiritPendant: { id:'spiritPendant', name:'Spirit Pendant', cost:300, target:'pokemon' },
 };
+
+// ─── Held Items ───────────────────────────────────────────────────────────
+// Each entry binds to a single Pokémon (one held item per Pokémon at a time —
+// dropping a new one replaces the old, with no refund). Acquired through the
+// town held-item shop or the Held Stash special event. Cost is uniform at $300.
+//   sprite : PokéAPI item-icon slug used for the badge on the team card
+//   consumed : true if the item gets destroyed after one battle (X-Vitamin)
+// Engine implementations live in engine.js — search for `heldItem === '<id>'`.
+export const HELD_ITEMS = {
+  xVitamin:    { id:'xVitamin',    name:'X-Vitamin',    cost:300, sprite:'x-attack',     consumed:true,
+                 desc:'+50% HP/ATK/SPD for one battle. Destroyed after.' },
+  resistBand:  { id:'resistBand',  name:'Resist Band',  cost:300, sprite:'air-balloon',
+                 desc:'Every battle, negates the first attack this Pokémon would take.' },
+  leftovers:   { id:'leftovers',   name:'Leftovers',    cost:300, sprite:'leftovers',
+                 desc:'Heals 5% of max HP at the end of every turn.' },
+  brightPowder:{ id:'brightPowder',name:'Bright Powder',cost:300, sprite:'bright-powder',
+                 desc:'8% chance to evade incoming attacks.' },
+  clearAmulet: { id:'clearAmulet', name:'Clear Amulet', cost:300, sprite:'cleanse-tag',
+                 desc:'Immune to stat debuffs.' },
+  expertBelt:  { id:'expertBelt',  name:'Expert Belt',  cost:300, sprite:'expert-belt',
+                 desc:'Super-effective attacks deal +20% damage.' },
+  luckyEgg:    { id:'luckyEgg',    name:'Lucky Egg',    cost:300, sprite:'lucky-egg',
+                 desc:'+1 level after every battle.' },
+  kingsRock:   { id:'kingsRock',   name:"King's Rock",  cost:300, sprite:'kings-rock',
+                 desc:'Attacks have a 10% chance to stun the target.' },
+  lifeOrb:     { id:'lifeOrb',     name:'Life Orb',     cost:300, sprite:'life-orb',
+                 desc:'+30% damage but loses 10% max HP per attack.' },
+  luckIncense: { id:'luckIncense', name:'Luck Incense', cost:300, sprite:'luck-incense',
+                 desc:'+$50 after every battle this Pokémon wins.' },
+  luckyPunch:  { id:'luckyPunch',  name:'Lucky Punch',  cost:300, sprite:'lucky-punch',
+                 desc:'+10% critical hit chance.' },
+  metronome:   { id:'metronome',   name:'Metronome',    cost:300, sprite:'metronome',
+                 desc:'+5% ATK each time this Pokémon attacks (stacking).' },
+  quickClaw:   { id:'quickClaw',   name:'Quick Claw',   cost:300, sprite:'quick-claw',
+                 desc:'+50 SPD while held.' },
+  rockyHelmet: { id:'rockyHelmet', name:'Rocky Helmet', cost:300, sprite:'rocky-helmet',
+                 desc:"Attackers take damage equal to 5% of their own max HP when hitting this Pokémon." },
+  safetyGoggles:{id:'safetyGoggles',name:'Safety Goggles',cost:300, sprite:'safety-goggles',
+                 desc:'This Pokémon cannot be stunned.' },
+  smokeBall:   { id:'smokeBall',   name:'Smoke Ball',   cost:300, sprite:'smoke-ball',
+                 desc:'Once per battle, if this Pokémon would faint, it swaps with the ally behind it and survives with 1 HP.' },
+  effectOrb:   { id:'effectOrb',   name:'Effect Orb',   cost:300, sprite:'toxic-orb',
+                 desc:'Burn and Poison abilities from this Pokémon apply 2× the amount they normally would.' },
+};
+export const HELD_ITEM_COST = 300;
 
 // Berry boost amounts are the source of truth here — both the use-item handler
 // (phases.js) and the tooltip/preview text (ui.js, phases.js berry pick card)

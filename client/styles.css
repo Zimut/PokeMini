@@ -1342,6 +1342,43 @@ button.primary:hover { background: var(--accent-deep); border-color: var(--accen
 }
 .town-choices > .card { width: 260px; flex: 0 0 auto; }
 
+/* Section labels between the Items and Held-Items shop rows. Small, lowercase,
+   centered — they're a visual separator more than a heading, so they stay quiet. */
+.town-section-label {
+  text-align: center;
+  font-size: 12px; font-weight: 700; letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+  margin: 18px 0 8px;
+}
+/* Held-item shop cards reuse the .shop-item layout but with a "grab" cursor since
+   they're draggable instead of clickable. Hover gives a faint lift to telegraph
+   the drag affordance, and the .dragging state dims the source card while the
+   drag ghost is being moved. */
+.card.held-shop-item {
+  cursor: grab;
+  transition: transform 0.12s ease, box-shadow 0.12s ease;
+}
+.card.held-shop-item:hover:not(.disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+}
+.card.held-shop-item.disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.card.held-shop-item.dragging { opacity: 0.4; cursor: grabbing; }
+.held-shop-row .town-empty-msg {
+  font-size: 13px; color: var(--ink-soft);
+  text-align: center; padding: 12px;
+  font-style: italic;
+}
+
+/* Held Stash event cards — same as Lost Stash but draggable. The base .stash-item
+   rule sets pointer cursor (click-to-pick); override to grab + dragging dim. */
+.card.held-stash-card { cursor: grab; }
+.card.held-stash-card.dragging { opacity: 0.4; cursor: grabbing; }
+
 /* Town shop reroll button — lives in the right slot of the phase header, opposite
    the "Town — <zone>" title. Compact, themed accent color, dims when disabled. */
 .town-reroll-btn {

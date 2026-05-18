@@ -1,5 +1,5 @@
 // Game phases: starter → adventure → battle → town → repeat.
-import { SPECIES, ITEMS, BERRIES, ZONES, GYM_LEADERS, TRAINERS, RUN, rankFromElo, RANK_BAND } from './data.js';
+import { SPECIES, ITEMS, BERRIES, ZONES, GYM_LEADERS, TRAINERS, RUN, rankFromElo, RANK_BAND, HELD_ITEMS, HELD_ITEM_COST } from './data.js';
 import { newRng, buildTeam, simulate, actualStats } from './engine.js';
 import * as S from './state.js';
 import { setPhase, phaseHeader, renderTopbar, renderTeam, renderItems, attachTooltip, SPRITE_URL, abilityTooltip, abilityName, itemTooltip, pokemonCardInnerHTML, itemIcon, TRAINER_SPRITE_URL, setTopbarStep, ITEM_ICON_URL, resetTopbarTrack, rankIcon } from './ui.js';
@@ -70,7 +70,7 @@ function grantTeamExpWithPopups(levels) {
 
 function repaint() {
   renderTopbar(state);
-  renderTeam(state, { onSwap, onUseItem });
+  renderTeam(state, { onSwap, onUseItem, onAttachHeldItem });
   renderItems(state, { onUseItem });
   updateOptionsButton();
   // Pokédex "seen" tracking — any Pokémon currently on the team has, by definition,
@@ -133,10 +133,8 @@ function onUseItem(itemId, target) {
   // Item dispatch
   // Revive was retired alongside the "always heal after every battle" rework — no
   // Pokémon stays fainted between battles anymore, so there's nothing to revive.
-  if (itemId === 'xVitamin' && target.type === 'pokemon') {
-    const p = state.team[target.slot]; if (!p || p.inDaycare) return;
-    p.xVitamin = true; S.removeItem(state, idx); repaint(); return;
-  }
+  // X-Vitamin moved to HELD_ITEMS — attached via the held-item shop / Held Stash
+  // event, not via inventory drag. Handler removed.
   if (itemId === 'evosoda' && target.type === 'pokemon') {
     const p = state.team[target.slot]; if (!p || p.inDaycare) return;
     const beforeSpecies = p.speciesId, beforeLevel = p.level;
@@ -210,6 +208,41 @@ function onUseItem(itemId, target) {
     S.removeItem(state, idx); repaint(); return;
   }
   // Great Ball, Trade Card, Lure: handled in their event phases (this just no-ops here)
+}
+
+// Held-item drop on a team Pokémon. `data` is the drag payload — { type:'heldItem', id, source, cost? }.
+// Dispatches on `data.source`:
+//   • 'shop'  → town shop buy: charge $cost, attach to Pokémon, remove offer, re-render town
+//   • 'stash' → free Held Stash event claim: attach to Pokémon, complete the adventure step
+// Replacing an existing held item on the same Pokémon destroys the old one (no refund) —
+// this is the only way to "remove" a held item, by intent.
+function onAttachHeldItem(data, slot) {
+  if (!data || !HELD_ITEMS[data.id]) return;
+  const p = state.team[slot];
+  if (!p || p.inDaycare || p.fainted) return;     // daycare/fainted Pokémon can't be equipped
+  if (data.source === 'shop') {
+    const cost = data.cost | 0;
+    if (state.money < cost) return;
+    state.money -= cost;
+    p.heldItem = data.id;
+    // Remove from offered list so the player can't buy the same instance twice.
+    if (Array.isArray(state.townHeldOffer)) {
+      state.townHeldOffer = state.townHeldOffer.filter(id => id !== data.id);
+    }
+    save();
+    repaint();
+    // Re-enter the town renderer to refresh the held-shop cards / disabled states.
+    if (state.phase === 'town') startTown();
+    return;
+  }
+  if (data.source === 'stash') {
+    p.heldItem = data.id;
+    queueTeamPopup(slot, `+${HELD_ITEMS[data.id].name}`, 'level');
+    save();
+    repaint();
+    completeAdventureStep();
+    return;
+  }
 }
 
 // ─── Options menu (corner button) ────────────────────────────────────────
@@ -1206,12 +1239,17 @@ function trainerCardContent(trainer, difficulty) {
 // Pick 1 of 2 distinct special events from {berry, trade, job, daycare, lostStash,
 // wildHorde}. Same forbidden-by-state gating as the old special slot. The two picks
 // can NEVER be the same kind. No skip option here — special steps always fire.
-const SPECIAL_KINDS = ['berry', 'trade', 'job', 'daycare', 'lostStash', 'wildHorde', 'collector'];
+const SPECIAL_KINDS = ['berry', 'trade', 'job', 'daycare', 'lostStash', 'wildHorde', 'collector', 'heldStash'];
 function rollSpecialStep() {
   const forbidden = new Set();
   if (S.teamCount(state) <= 1) { forbidden.add('trade'); forbidden.add('daycare'); forbidden.add('collector'); }
   if (S.daycareSlot(state))    forbidden.add('daycare');
   if (!S.hasItemSlot(state))   forbidden.add('lostStash');
+  // Held Stash needs at least one non-daycare Pokémon to receive the item. Without that,
+  // the event has no valid drop target. (We don't forbid based on existing heldItems —
+  // the player can choose to replace an existing held item, that's part of the design.)
+  const hasReceiver = Object.values(state.team).some(p => p && !p.inDaycare);
+  if (!hasReceiver) forbidden.add('heldStash');
   let pool = SPECIAL_KINDS.filter(k => !forbidden.has(k));
   if (pool.length < 2) pool = SPECIAL_KINDS;          // ungate everything as a last resort
   const shuffled = pool.slice().sort(() => rng.float() - 0.5);
@@ -1293,6 +1331,8 @@ function eventCardContent(ev) {
       return { title: t('event.daycare.title'),    desc: t('event.daycare.desc', RUN.daycareLevels), body: eventImg('daycare', 'lucky-egg') };
     case 'lostStash':
       return { title: t('event.lostStash.title'),  desc: t('event.lostStash.desc'),           body: eventImg('lostStash', 'amulet-coin') };
+    case 'heldStash':
+      return { title: t('event.heldStash.title'),  desc: t('event.heldStash.desc'),           body: eventImg('heldStash', 'leftovers') };
     case 'collector':
       return { title: t('event.collector.title'),  desc: t('event.collector.desc'),           body: eventImg('collector', 'nugget') };
     case 'wildHorde': {
@@ -1339,6 +1379,7 @@ function handleEvent(ev) {
   if (ev.kind === 'job')        { startJobEvent(); return; }
   if (ev.kind === 'daycare')    { startDaycareEvent(); return; }
   if (ev.kind === 'lostStash')  { startLostStashEvent(); return; }
+  if (ev.kind === 'heldStash')  { startHeldStashEvent(); return; }
   if (ev.kind === 'wildHorde')  { startWildHordeEvent(); return; }
   if (ev.kind === 'collector')  { startCollectorEvent(); return; }
 }
@@ -1678,6 +1719,49 @@ function startLostStashEvent() {
   });
 }
 
+// Held Stash — the held-item counterpart of Lost Stash. Presents 3 random held items
+// as DRAGGABLE cards (held items attach to specific Pokémon, so click-to-pick wouldn't
+// make sense). Player drags one onto a team member; the team display down below is the
+// live drop zone via renderTeam's drop handler + onAttachHeldItem('stash', …). Picking
+// any one item completes the adventure step.
+function startHeldStashEvent() {
+  if (!state.currentEvent.stashItems) {
+    const pool = Object.keys(HELD_ITEMS);
+    const shuffled = pool.slice().sort(() => rng.float() - 0.5);
+    state.currentEvent.stashItems = shuffled.slice(0, 3);
+    save();
+  }
+  const ids = state.currentEvent.stashItems;
+  const cards = ids.map((id) => {
+    const def = HELD_ITEMS[id];
+    const iconUrl = def && def.sprite ? ITEM_ICON_URL(def.sprite) : null;
+    return `<div class="card stash-item held-stash-card" draggable="true" data-held-item="${id}">
+      <div class="item-icon-wrap">${iconUrl ? `<img src="${iconUrl}" alt="${def.name}" loading="lazy">` : ''}</div>
+      <div class="name">${def.name}</div>
+      <div class="cost">${def.desc || ''}</div>
+    </div>`;
+  }).join('');
+  setPhase(`${phaseHeader(t('event.heldStash.title'), t('heldStash.subtitle'))}
+    <div class="choices stash-choices">${cards}</div>
+  `);
+  // Wire each card as a drag source. The team-slot drop handler in ui.js (renderTeam)
+  // catches the drop and calls onAttachHeldItem({...}, slot), which in this case ends
+  // the adventure step automatically (source: 'stash').
+  document.querySelectorAll('.card.held-stash-card').forEach(el => {
+    el.addEventListener('dragstart', (e) => {
+      const id = el.dataset.heldItem;
+      const payload = { type: 'heldItem', id, source: 'stash' };
+      e.dataTransfer.setData('text/plain', JSON.stringify(payload));
+      window.__pmDrag = payload;
+      el.classList.add('dragging');
+    });
+    el.addEventListener('dragend', () => {
+      window.__pmDrag = null;
+      el.classList.remove('dragging');
+    });
+  });
+}
+
 // Wild Horde — six instances of the same wild species from the current zone's pool.
 // Win → team gets +3 levels. Loss → −1 strike, same as a trainer loss.
 function startWildHordeEvent() {
@@ -1899,16 +1983,20 @@ function runBattle(opponentRoster, opponentLabel, applyResults) {
     hpBonus: p.hpBonus, atkBonus: p.atkBonus, spdBonus: p.spdBonus,
     type1: p.type1, type2: p.type2, abilityOverride: p.ability,
     fainted: !!p.fainted,                    // carry pre-fight fainted state into the battle
-    shiny: !!p.shiny,                        // and the shiny flag (engine applies +15% + alt sprite)
+    shiny: !!p.shiny,                        // shiny flag — engine applies +15% + alt sprite
+    heldItem: p.heldItem || null,            // held item — engine reads u.heldItem for hooks
   }));
-  // Apply X-Vitamin transient buff
+  // Apply X-Vitamin transient buff. Now triggered by the heldItem flag instead
+  // of the old standalone p.xVitamin field. The held item is consumed
+  // (cleared from the live Pokémon) since X-Vitamin is `consumed: true`.
   for (const e of myRoster) {
     const live = state.team[e.slot];
-    if (live.xVitamin) {
+    if (live.heldItem === 'xVitamin') {
       e.hpBonus = (e.hpBonus || 0) + Math.floor((SPECIES[e.speciesId].hp * e.level / 20 + e.level) * 0.5);
       e.atkBonus = (e.atkBonus || 0) + Math.floor((SPECIES[e.speciesId].atk * e.level / 50 + 2) * 0.5);
       e.spdBonus = (e.spdBonus || 0) + Math.floor((SPECIES[e.speciesId].spd * e.level / 50 + 2) * 0.5);
-      live.xVitamin = false;
+      live.heldItem = null;     // consumed
+      e.heldItem = null;        // reflect in roster so engine doesn't double-apply
     }
   }
   const teamA = buildTeam(myRoster, 'A');
@@ -1922,6 +2010,7 @@ function runBattle(opponentRoster, opponentLabel, applyResults) {
     abilityId: u.abilityId, type1: u.type1, type2: u.type2,
     burn: 0, poison: 0, stun: 0, fainted: u.fainted,
     shiny: !!u.shiny,                         // for sprite swap during animation
+    heldItem: u.heldItem || null,             // carry held item id so the battle tooltip can render its badge
     dmgDealt: 0,                              // running per-unit "damage caused" total — incremented by hit/heal/rest/revive events
   }));
   const animA = snapshot(teamA);
@@ -1939,6 +2028,39 @@ function runBattle(opponentRoster, opponentLabel, applyResults) {
   // Lock in the outcome BEFORE the animation: apply rewards/strikes/etc. and pre-stage
   // state.phase so a refresh during the animation resumes on the post-battle screen.
   applyResults(result);
+  // Held item post-battle hooks. Lucky Egg grants +1 level to its holder regardless of
+  // outcome; Luck Incense grants +$50 to the player per holder on a win. Daycare-bound
+  // Pokémon are skipped (they didn't participate). Levels apply AFTER applyResults so
+  // they layer on top of the standard XP grant.
+  {
+    const won = result.winner === 'A';
+    let moneyGain = 0;
+    for (const [slot, p] of Object.entries(state.team)) {
+      if (p.inDaycare) continue;
+      if (p.heldItem === 'luckyEgg') {
+        const beforeId = p.speciesId;
+        const beforeLvl = p.level;
+        p.level = Math.min(100, p.level + 1);
+        S.checkEvolve(p);
+        const sp = SPECIES[p.speciesId];
+        const stats = S.applyShinyMult(actualStats(sp, p.level), p.shiny);
+        const hpRatio = p.hpMax > 0 ? p.hp / p.hpMax : 1;
+        p.hpMax = stats.hp + (p.hpBonus || 0);
+        p.atk   = stats.atk + (p.atkBonus || 0);
+        p.spd   = stats.spd + (p.spdBonus || 0);
+        p.hp = Math.floor(p.hpMax * hpRatio);
+        if (p.speciesId !== beforeId) {
+          queueTeamPopup(slot, t('popup.evolved'), 'evolve');
+        } else if (p.level > beforeLvl) {
+          queueTeamPopup(slot, t('popup.levels', p.level - beforeLvl), 'level');
+        }
+      }
+      if (won && p.heldItem === 'luckIncense') {
+        moneyGain += 50;
+      }
+    }
+    if (moneyGain > 0) state.money += moneyGain;
+  }
   save();
   // Animation is purely a spectator view now — Continue just navigates to whichever
   // post-battle phase applyResults pre-staged.
@@ -2476,17 +2598,31 @@ function showBattleAnimation(snapA, snapB, result, opponentLabel, callback) {
           await wait(step * 0.3);
           break;
         case 'imposter': {
-          // Ditto copied an ally — swap its animation snapshot to the copied species so
-          // refreshSlot picks the new sprite, and tag the slot with .is-imposter for the
+          // Ditto copied an ally — swap its animation snapshot to the copied species
+          // (sprite + stats) so refreshSlot picks the new sprite AND the tooltip
+          // shows the copied stats. Tag the slot with .is-imposter for the
           // persistent purple tint defined in styles.css.
           const u = byUid[e.who]; if (!u) break;
           u.speciesId = e.copiedSpeciesId;
           u.species = SPECIES[e.copiedSpeciesId];
           if (e.copiedName) u.name = e.copiedName;
+          if (e.hpMax != null) u.hpMax = e.hpMax;
+          if (e.hp    != null) u.hp    = e.hp;
+          if (e.atk   != null) u.atk   = e.atk;
+          if (e.spd   != null) u.spd   = e.spd;
           refreshSlot(e.who);
           const slot = findUnitDom(e.who);
           if (slot) slot.classList.add('is-imposter');
           await wait(step * 0.3);
+          break;
+        }
+        // PredatorsMark — shrinks an enemy's hpMax + current HP. The animation
+        // mirrors both so the tooltip's HP buff badge shows the negative delta.
+        case 'hpMaxCut': {
+          const u = byUid[e.who]; if (!u) break;
+          u.hpMax = Math.max(1, u.hpMax - (e.amount | 0));
+          u.hp    = Math.max(1, u.hp    - (e.amount | 0));
+          refreshSlot(e.who);
           break;
         }
       }
@@ -2533,6 +2669,14 @@ function startTown() {
     state.townOffer = itemPool.slice().sort(() => rng.float() - 0.5).slice(0, 3).map(x => x.id);
   }
   const offered = state.townOffer.map(id => ITEMS[id]).filter(Boolean);
+  // Held-item shop offering — 3 random distinct held items at the flat HELD_ITEM_COST.
+  // Persisted alongside townOffer so a refresh keeps the same stock, and a reroll wipes
+  // both pools simultaneously (held items are part of the same "town wares" rotation).
+  if (!state.townHeldOffer) {
+    const heldPool = Object.keys(HELD_ITEMS);
+    state.townHeldOffer = heldPool.slice().sort(() => rng.float() - 0.5).slice(0, 3);
+  }
+  const heldOffered = state.townHeldOffer.map(id => HELD_ITEMS[id]).filter(Boolean);
   save();
   const renderTown = () => {
     const itemCards = offered.map(it => {
@@ -2572,14 +2716,57 @@ function startTown() {
     const canAfford = state.money >= rerollCost;
     const rerollBtn = `<button id="btn-reroll-shop" class="town-reroll-btn" ${canAfford ? '' : 'disabled'}>${t('town.rerollBtn')}&nbsp;&nbsp;<span class="reroll-cost">$${rerollCost}</span></button>`;
 
+    // Held-item shop row — visually mirrors the regular shop cards but the cards are
+    // DRAGGABLE (no click-to-buy: held items attach to a specific Pokémon, so the player
+    // drags onto a team slot to commit). Disabled state when money is short greys the
+    // card; the drop handler in onAttachHeldItem still gates on cost so a stale drag
+    // can't bypass it.
+    const heldCards = heldOffered.map(it => {
+      const iconUrl = it.sprite ? ITEM_ICON_URL(it.sprite) : null;
+      const cost = it.cost || HELD_ITEM_COST;
+      const cantAfford = state.money < cost;
+      return `<div class="card shop-item held-shop-item${cantAfford ? ' disabled' : ''}" draggable="${cantAfford ? 'false' : 'true'}" data-held-item="${it.id}">
+        ${iconUrl ? `<img src="${iconUrl}" alt="${it.name}" class="card-item-icon" loading="lazy">` : ''}
+        <div class="shop-item-info">
+          <div class="shop-item-head">
+            <span class="ctitle">${it.name}</span>
+            <span class="cost">$${cost}</span>
+          </div>
+          <div class="csub">${it.desc || ''}</div>
+        </div>
+      </div>`;
+    }).join('');
+
     setPhase(`${phaseHeader(t('town.title', ZONES[state.zone - 1].name), '', rerollBtn)}
+      <div class="town-section-label">${t('town.itemsLabel')}</div>
       <div class="town-choices">${itemCards}</div>
+
+      <div class="town-section-label">${t('town.heldItemsLabel')}</div>
+      <div class="town-choices held-shop-row">${heldCards || `<div class="town-empty-msg">${t('town.heldShopEmpty')}</div>`}</div>
 
       <div class="sell-zone" id="sell-drop">${t('town.sellLabel')}</div>
 
       <div style="text-align:center;margin-top:24px;">
         <button class="primary" id="btn-next-zone">${t('town.continue')}</button>
       </div>`);
+
+    // Wire held-shop cards as drag sources. Drop happens on team slots (see renderTeam's
+    // drop handler + onAttachHeldItem('shop', …)). Disabled cards skip wiring entirely
+    // so the browser doesn't show its drag ghost when the player can't afford it.
+    document.querySelectorAll('.card.held-shop-item:not(.disabled)').forEach(el => {
+      el.addEventListener('dragstart', (e) => {
+        const id = el.dataset.heldItem;
+        const def = HELD_ITEMS[id]; if (!def) return;
+        const payload = { type: 'heldItem', id, source: 'shop', cost: def.cost || HELD_ITEM_COST };
+        e.dataTransfer.setData('text/plain', JSON.stringify(payload));
+        window.__pmDrag = payload;
+        el.classList.add('dragging');
+      });
+      el.addEventListener('dragend', () => {
+        window.__pmDrag = null;
+        el.classList.remove('dragging');
+      });
+    });
 
     // Reroll handler — charges the escalating fee, regenerates state.townOffer with a
     // fresh random 3-pick from the full item pool, increments the run-wide counter,
@@ -2593,6 +2780,10 @@ function startTown() {
         state.townRerolls = rerollCount + 1;
         const itemPool = Object.values(ITEMS);
         state.townOffer = itemPool.slice().sort(() => rng.float() - 0.5).slice(0, 3).map(x => x.id);
+        // Reroll wipes the held-item offer too — both pools refresh in lockstep so
+        // the player gets a fully fresh shop for the fee.
+        const heldPool = Object.keys(HELD_ITEMS);
+        state.townHeldOffer = heldPool.slice().sort(() => rng.float() - 0.5).slice(0, 3);
         save();
         repaint();
         startTown();      // full re-entry so `offered` and the rendered cards refresh
@@ -2681,6 +2872,7 @@ function startTown() {
       saveSnapshot(state, 'zoneClear');
       state.zone++;
       state.townOffer = null;                 // reshuffle next town
+      state.townHeldOffer = null;             // held-item shop reshuffles per town too
       state.seenTrainers = [];                // fresh trainer pool for the new zone
       if (state.zone > 7) { save(); return endRun(state.badges >= RUN.badgesToWin ? 'won' : 'lost'); }
       startAdventure();

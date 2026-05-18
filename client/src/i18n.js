@@ -55,6 +55,9 @@ const en = {
   'event.daycare.desc':  (lvls) => `Leave a Pokémon training until next Town. Gains ${lvls} levels.`,
   'event.lostStash.title': 'Lost Stash',
   'event.lostStash.desc':  'Pick one of three random items.',
+  'event.heldStash.title': 'Held Stash',
+  'event.heldStash.desc':  'Drag a held item onto a Pokémon to equip it.',
+  'heldStash.subtitle':    'Drag any of these onto a team Pokémon to equip it. Replaces any held item that Pokémon is already carrying.',
   'event.wildHorde.title': 'Wild Horde',
   'event.wildHorde.desc':  'Fight 6 of the same Pokémon for +1 team level.',
   'event.wildHorde.intro': (name) => `Six ${name} have appeared. Defeat them for +1 team level.`,
@@ -169,6 +172,9 @@ const en = {
   'town.sellAmount': (n) => `+$${n}`,
   'town.rerollBtn': '↻ Reroll Items',
   'town.continue': 'Continue to next zone',
+  'town.itemsLabel': 'Items',
+  'town.heldItemsLabel': 'Held Items — drag onto a Pokémon to equip',
+  'town.heldShopEmpty': 'Sold out — reroll for fresh stock.',
 
   // ─── Options ─────────────────────────────────────────────────────────
   'options.abandon': 'Abandon Run',
@@ -327,6 +333,9 @@ const ptBR = {
   'event.daycare.desc':  (lvls) => `Deixe um Pokémon treinando até a próxima Cidade. Ganha ${lvls} níveis.`,
   'event.lostStash.title': 'Tesouro Perdido',
   'event.lostStash.desc':  'Escolha um de três itens aleatórios.',
+  'event.heldStash.title': 'Tesouro Equipável',
+  'event.heldStash.desc':  'Arraste um item equipável para um Pokémon para equipá-lo.',
+  'heldStash.subtitle':    'Arraste qualquer um destes para um Pokémon do time para equipá-lo. Substitui qualquer item equipável que o Pokémon já carregue.',
   'event.wildHorde.title': 'Horda Selvagem',
   'event.wildHorde.desc':  'Lute contra 6 do mesmo Pokémon por +1 nível de time.',
   'event.wildHorde.intro': (name) => `Seis ${name} apareceram. Derrote-os por +1 nível de time.`,
@@ -441,6 +450,9 @@ const ptBR = {
   'town.sellAmount': (n) => `+$${n}`,
   'town.rerollBtn': '↻ Trocar Itens',
   'town.continue': 'Continuar para a próxima zona',
+  'town.itemsLabel': 'Itens',
+  'town.heldItemsLabel': 'Itens Equipáveis — arraste para um Pokémon para equipar',
+  'town.heldShopEmpty': 'Esgotado — troque para repor o estoque.',
 
   // ─── Options ─────────────────────────────────────────────────────────
   'options.abandon': 'Abandonar Run',
