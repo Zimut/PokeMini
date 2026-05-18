@@ -1,6 +1,7 @@
 // UI helpers: rendering HUD, tooltips, drag-and-drop, sprite URLs.
-import { SPECIES, ITEMS, BERRIES, ZONES, rankFromElo } from './data.js';
+import { SPECIES, ITEMS, BERRIES, ZONES, rankFromElo, RUN } from './data.js';
 import { t } from './i18n.js';
+import { actualStats } from './engine.js';
 
 // SPRITE_URL — pass shiny:true to get the alternate-palette variant from PokeAPI's
 // `/sprites/pokemon/shiny/` folder. All existing one-arg callers continue to work
@@ -161,6 +162,10 @@ const ABILITY_DESC = {
   moxie: [
     'Each enemy this Pokémon defeats grants 15% ATK. Stacks.',
     'Each enemy this Pokémon defeats grants 30% ATK. Stacks.',
+  ],
+  toughClaws: [
+    'Non-super-effective attacks deal 30% more damage.',
+    'Non-super-effective attacks deal 60% more damage.',
   ],
   waterVeil: [
     'At or above 75% HP, attacks deal 10% more damage.',
@@ -398,7 +403,7 @@ const ABILITY_NICE_NAME = {
   adaptability:'Adaptability', helpingHand:'Helping Hand', pickup:'Pickup', lullaby:'Lullaby',
   sniper:'Sniper', chlorophyll:'Chlorophyll', gluttony:'Gluttony',
   damp:'Damp', coil:'Coil', stamina:'Stamina', rivalry:'Rivalry',
-  healer:'Healer', moxie:'Moxie', mimic:'Mimic', limber:'Limber',
+  healer:'Healer', moxie:'Moxie', mimic:'Mimic', limber:'Limber', toughClaws:'Tough Claws',
   // New synergy-themed abilities
   encore:'Encore', bodySlam:'Body Slam', opportunist:'Opportunist',
   photosynthesis:'Photosynthesis', boulderRoll:'Boulder Roll',
@@ -442,10 +447,16 @@ export function hideTooltip() {
 }
 
 export function attachTooltip(el, title, body, opts = {}) {
+  // `body` can be a string (captured-at-attach-time content) or a function (called
+  // at show time for live content). The function form lets callers like the battle
+  // tooltip rebuild from the current snapshot every hover, so HP changes and buff
+  // badges reflect the current state rather than the state at battle start.
   const show = (e) => {
     const tt = getTooltip();
     tt.className = 'tooltip' + (opts.rich ? ' rich' : '');
-    tt.innerHTML = opts.rich ? body : `<div class="tname">${escape(title)}</div>${escape(body)}`;
+    const resolvedBody = typeof body === 'function' ? body() : body;
+    const resolvedTitle = typeof title === 'function' ? title() : title;
+    tt.innerHTML = opts.rich ? resolvedBody : `<div class="tname">${escape(resolvedTitle)}</div>${escape(resolvedBody)}`;
     tt.classList.remove('hidden');
     tooltipOwner = el;
     const r = el.getBoundingClientRect();
@@ -616,6 +627,27 @@ export function pokemonCardInnerHTML(p) {
   const xVitaminBadge = p.xVitamin
     ? `<div class="slot-vitamin-badge" title="X-Vitamin active — next battle"><img src="${ITEM_ICON_URL('x-attack')}" alt="X-Vitamin"></div>`
     : '';
+  // Stat buff badges — compute the "natural" baseline from species + level
+  // (with shiny multiplier baked in) and show `+N` in green next to each stat
+  // when the current value exceeds it. Captures berry boosts, X-Vit
+  // application, and any other permanent stat-mod source. Hidden when the
+  // diff is 0 or negative. In-battle multiplicative stat mods (coil,
+  // intimidate, etc.) aren't reflected here since the battle snapshot
+  // freezes p.atk/p.spd at battle-start values — that's future work.
+  const baseStats = actualStats(sp, p.level);
+  if (p.shiny) {
+    const m = RUN.shinyStatMultiplier;
+    baseStats.hp  = Math.round(baseStats.hp  * m);
+    baseStats.atk = Math.round(baseStats.atk * m);
+    baseStats.spd = Math.round(baseStats.spd * m);
+  }
+  const buff = (cur, base) => {
+    const d = (cur | 0) - (base | 0);
+    return d > 0 ? `<span class="stat-buff">+${d}</span>` : '';
+  };
+  const hpBuff  = buff(hpMax, baseStats.hp);
+  const atkBuff = buff(p.atk, baseStats.atk);
+  const spdBuff = buff(p.spd, baseStats.spd);
   return `
     ${xVitaminBadge}
     <div class="slot-main">
@@ -630,17 +662,17 @@ export function pokemonCardInnerHTML(p) {
           <div class="stat-row">
             <label>${t('stat.hp')}</label>
             <div class="stat-bar hp"><div style="width:${pct(hpMax, STAT_CAP.hp)}%"></div></div>
-            <span class="stat-val${hpClass}">${hpLabel}</span>
+            <span class="stat-val${hpClass}">${hpLabel}${hpBuff}</span>
           </div>
           <div class="stat-row">
             <label>${t('stat.atk')}</label>
             <div class="stat-bar atk"><div style="width:${pct(p.atk, STAT_CAP.atk)}%"></div></div>
-            <span class="stat-val">${p.atk}</span>
+            <span class="stat-val">${p.atk}${atkBuff}</span>
           </div>
           <div class="stat-row">
             <label>${t('stat.spd')}</label>
             <div class="stat-bar spd"><div style="width:${pct(p.spd, STAT_CAP.spd)}%"></div></div>
-            <span class="stat-val">${p.spd}</span>
+            <span class="stat-val">${p.spd}${spdBuff}</span>
           </div>
         </div>
       </div>

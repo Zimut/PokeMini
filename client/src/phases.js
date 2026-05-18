@@ -1165,7 +1165,12 @@ function trainerCardContent(trainer, difficulty) {
   const zone = ZONES[state.zone - 1];
   const isHard = difficulty === 'hard';
   const normalLevel = zone.min + 1 + S.scalingStep(state.advStep) + state.zone;
-  const trainerLevel = normalLevel + (isHard ? RUN.hardTrainerLevelPerZone * state.zone : 0);
+  // Hard-trainer level bump scales with zone but caps at RUN.hardTrainerLevelMax
+  // (+3 by default) so late zones don't push the gap into "unwinnable" range.
+  const hardBump = isHard
+    ? Math.min(RUN.hardTrainerLevelMax, RUN.hardTrainerLevelPerZone * state.zone)
+    : 0;
+  const trainerLevel = normalLevel + hardBump;
   // Hard adds extraPokemon to size, capped at teamSize. Pool may not have that many
   // entries — fall back to repeating the last entry so the size still grows visibly.
   const baseSize = trainer.size;
@@ -1369,10 +1374,15 @@ function trainerSlot(i, size) {
 function startTrainerBattle(trainer, difficulty = 'normal') {
   const zone = ZONES[state.zone - 1];
   // Base level uses the same formula as the old single-difficulty version. Hard adds
-  // hardTrainerLevelPerZone × state.zone per Pokémon, so Z1 hard = +1 lvl, Z7 hard = +7.
+  // hardTrainerLevelPerZone × state.zone per Pokémon, capped at RUN.hardTrainerLevelMax
+  // so Z1 hard = +1 lvl, Z3+ hard = +3 lvl (was +N up to +7, which made the late zones
+  // brutal). Must stay in sync with trainerCardContent's preview math.
   const isHard = difficulty === 'hard';
   const normalLevel  = zone.min + 1 + S.scalingStep(state.advStep) + state.zone;
-  const trainerLevel = normalLevel + (isHard ? RUN.hardTrainerLevelPerZone * state.zone : 0);
+  const hardBump = isHard
+    ? Math.min(RUN.hardTrainerLevelMax, RUN.hardTrainerLevelPerZone * state.zone)
+    : 0;
+  const trainerLevel = normalLevel + hardBump;
   // Hard adds +hardTrainerExtraPokemon to roster size, capped at RUN.teamSize. Pool
   // may not have that many distinct entries — repeat the last one in that case so the
   // roster still visibly grows.
@@ -1388,10 +1398,11 @@ function startTrainerBattle(trainer, difficulty = 'normal') {
     let sp = SPECIES[m.speciesId];
     while (sp && sp.evolvesTo && sp.evolvesAt && m.level >= sp.evolvesAt) { m.speciesId = sp.evolvesTo; sp = SPECIES[m.speciesId]; }
   }
-  const label = isHard
-    ? `${t('battle.trainerLabel', trainer.name)} — ${t('trainer.hard.title')}`
-    : t('battle.trainerLabel', trainer.name);
-  runBattle(roster, label, (result) => {
+  // Battle title shows just the trainer's archetype name (e.g. "Bug Catcher") —
+  // no "Trainer:" prefix, no "Hard Trainer" suffix. Difficulty is already
+  // communicated by the orange-tinted card / extra Pokémon on the pick screen,
+  // and the roster preview during the fight reinforces it.
+  runBattle(roster, trainer.name, (result) => {
     if (result.winner === 'A') {
       // Win: money + difficulty-tiered XP. No berry drop anymore — the choice itself
       // (and the level reward) is the reward.
@@ -2023,8 +2034,11 @@ function showBattleAnimation(snapA, snapB, result, opponentLabel, callback) {
     document.querySelectorAll('.battle-slot[data-uid]').forEach(el => {
       const u = byUid[parseInt(el.dataset.uid, 10)];
       if (!u) return;
-      const cardHtml = `<div class="slot display">${pokemonCardInnerHTML(u)}</div>`;
-      attachTooltip(el, '', cardHtml, { rich: true });
+      // Pass body as a function so it rebuilds from the LIVE snapshot every
+      // hover — captures HP changes from damage/heal, hpMax growth from helping-
+      // hand, and the persistent stat buffs the card already shows via the
+      // pokemonCardInnerHTML diff badges.
+      attachTooltip(el, '', () => `<div class="slot display">${pokemonCardInnerHTML(u)}</div>`, { rich: true });
     });
   }
 
@@ -2049,6 +2063,7 @@ function showBattleAnimation(snapA, snapB, result, opponentLabel, callback) {
         <button class="speed-btn${speedActiveCls(1)}" data-speed="1">1×</button>
         <button class="speed-btn${speedActiveCls(2)}" data-speed="2">2×</button>
         <button class="speed-btn${speedActiveCls(4)}" data-speed="4">4×</button>
+        <button class="speed-btn speed-pause" data-speed="0" title="Pause">⏸</button>
       </div>
       <button id="btn-continue" class="battle-control-btn hidden">${t('battle.continue')}</button>
     </div>
@@ -2075,17 +2090,39 @@ function showBattleAnimation(snapA, snapB, result, opponentLabel, callback) {
   let speedMult = initialSpeed;                   // persisted across battles/runs/sessions
   let speedMs = BASE_MS / speedMult;
   let started = false;
+  // `paused` halts the animation in place — the wait() loop polls this flag and
+  // refuses to advance its elapsed counter while it's true, so timers freeze
+  // mid-step. Toggled via the ⏸ button. Never persisted (you don't want to
+  // load into a paused battle on a refresh).
+  let paused = false;
 
-  function setSpeed(m) {
-    speedMult = m;
-    speedMs = BASE_MS / speedMult;
-    // Persist the player's preferred speed — outlives this battle, the current run, and
-    // the browser tab (separate localStorage key from the run save).
-    try { localStorage.setItem('pm-battle-speed', String(m)); } catch (e) { /* ignore */ }
+  function refreshSpeedButtons() {
     document.querySelectorAll('.speed-btn').forEach(b => {
       const v = parseFloat(b.dataset.speed);
-      b.classList.toggle('speed-active', v === speedMult);
+      if (v === 0) {
+        b.classList.toggle('speed-active', paused);
+      } else {
+        b.classList.toggle('speed-active', !paused && v === speedMult);
+      }
     });
+  }
+
+  function setSpeed(m) {
+    if (m === 0) {
+      // Pause button toggles. Clicking it while paused un-pauses and restores the
+      // previously-active speed multiplier (which is still in speedMult).
+      paused = !paused;
+    } else {
+      // Any real speed click unpauses (if needed) AND sets the multiplier.
+      paused = false;
+      speedMult = m;
+      speedMs = BASE_MS / speedMult;
+      // Persist the player's preferred speed — outlives this battle, the current run, and
+      // the browser tab (separate localStorage key from the run save). Pause is NOT
+      // persisted, so a refresh always lands you in a playing state.
+      try { localStorage.setItem('pm-battle-speed', String(m)); } catch (e) { /* ignore */ }
+    }
+    refreshSpeedButtons();
   }
 
   // Clicking the Start Battle button hides itself, swaps the speed bar in, and kicks
@@ -2235,7 +2272,23 @@ function showBattleAnimation(snapA, snapB, result, opponentLabel, callback) {
     el.classList.add(cls);
     setTimeout(() => el.classList.remove(cls), ms);
   }
-  function wait(ms) { return new Promise(r => setTimeout(r, ms)); }
+  // Pausable wait — polls in 50ms slices and only advances elapsed time while
+  // `paused` is false. Replacing the bare setTimeout means timers literally
+  // freeze when the player clicks ⏸, then resume from the same point on
+  // unpause. 50ms granularity keeps the pause feel responsive without taxing
+  // the event loop on long animations.
+  function wait(ms) {
+    return new Promise(resolve => {
+      if (ms <= 0) return resolve();
+      let elapsed = 0;
+      const tick = 50;
+      const id = setInterval(() => {
+        if (paused) return;
+        elapsed += tick;
+        if (elapsed >= ms) { clearInterval(id); resolve(); }
+      }, tick);
+    });
+  }
   const setBanner = (text) => { document.querySelector('#turn-marker').textContent = text; };
 
   async function play() {

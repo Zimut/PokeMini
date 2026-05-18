@@ -97,8 +97,8 @@ const _S = [
   [55, 'Golduck',    'water', null,    95, 95, 85, 'damp',        null,null,2],
   [56, 'Mankey',     'fighting',null,  50, 80, 70, 'angerPoint',  57, 28, 1],
   [57, 'Primeape',   'fighting',null,  85,105, 95, 'angerPoint',  null,null,2],
-  [58, 'Growlithe',  'fire',  null,    65, 70, 60, 'moxie',       59, 40, 1],
-  [59, 'Arcanine',   'fire',  null,   100,110, 95, 'moxie',       null,null,2],
+  [58, 'Growlithe',  'fire',  null,    65, 70, 60, 'toughClaws',  59, 40, 1],
+  [59, 'Arcanine',   'fire',  null,   100,110, 95, 'toughClaws',  null,null,2],
   [60, 'Poliwag',    'water', null,    40, 50, 90, 'waterVeil',   61, 25, 1],
   [61, 'Poliwhirl',  'water', null,    65, 65, 90, 'waterVeil',   62, 37, 2],
   [62, 'Poliwrath',  'water','fighting',90,95, 70, 'waterVeil',   null,null,3],
@@ -373,6 +373,9 @@ export const RUN = {
   trainerSkipBerryCount: 2,           // same for the trainer-skip "Pick small berries" option
   trainerWinLevels: { normal: 1, hard: 2 },  // team-level reward per trainer difficulty
   hardTrainerLevelPerZone: 1,         // hard adds +N levels to each enemy, scaled by zone
+  hardTrainerLevelMax: 3,             // …capped at this value so late-zone hard trainers
+                                      // don't snowball into unwinnable territory.
+                                      // Z1 hard = +1, Z3 hard = +3, Z4+ hard = +3.
   hardTrainerExtraPokemon: 1,         // hard trainer brings +1 Pokémon (capped at teamSize=6)
   wildHordeLevels: 1,                 // team-level reward on horde win (was 3)
   // Capture-step rare-species chance. Each rare in the current zone's `rares` list

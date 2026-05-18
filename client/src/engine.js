@@ -418,6 +418,17 @@ function doAttack(attacker, attackerTeam, enemyTeam, rng, log) {
       dmg = Math.max(1, Math.floor(dmg * (1 + bonus / 100)));
       shout(target, `+${bonus}% DMG`, log);
     }
+    // Tough Claws (Growlithe line) — non-super-effective hits get a big damage
+    // boost, so Arcanine punches through resisting/neutral matchups instead of
+    // limping when the type chart isn't in its favor. Triggers when tmult ≤ 1;
+    // super-effective hits (tmult > 1) don't get the bonus — they're already
+    // strong enough. Immune targets (tmult === 0) still take 0 damage since
+    // the multiplier applies to 0.
+    if (attacker.abilityId === 'toughClaws' && tmult <= 1) {
+      const bonus = [30, 60][attacker.species.stage - 1] || 30;
+      dmg = Math.max(1, Math.floor(dmg * (1 + bonus / 100)));
+      shout(target, `+${bonus}% DMG`, log);
+    }
     log.push({ t:'atk', a: uid(attacker), tgt: uid(target),
                aSide: attacker.side, aSlot: attacker.slot,
                tSide: target.side, tSlot: target.slot,

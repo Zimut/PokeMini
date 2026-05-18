@@ -847,6 +847,16 @@ button.primary:hover { background: var(--accent-deep); border-color: var(--accen
 .stat-bar.spd > div { background: linear-gradient(90deg, #f1c453, #d9a830); }
 .stat-row .stat-val { font-size: 10px; font-weight: 700; color: var(--ink); min-width: 36px; text-align: right; }
 .stat-row .stat-val.hp-low { color: var(--warn); }
+/* Green "+N" buff badge sitting next to a stat value when it's above the
+   species-baseline-at-level. Captures berry boosts, X-Vit, shiny — anything
+   that lifted the stat above natural. */
+.stat-buff {
+  color: var(--good);
+  font-weight: 800;
+  margin-left: 4px;
+  font-size: 0.95em;
+  letter-spacing: 0.02em;
+}
 
 .slot-ability {
   font-size: 11px; color: var(--ink); line-height: 1.35;
@@ -1794,6 +1804,16 @@ button.primary:hover { background: var(--accent-deep); border-color: var(--accen
 .battle-speed-bar .speed-btn:hover:not(.speed-active) { background: var(--panel-2); }
 .battle-speed-bar .speed-btn.speed-active {
   background: var(--accent); color: white; border-color: var(--accent);
+}
+/* Pause button — slightly narrower so the ⏸ glyph doesn't stretch the bar, and
+   uses the warn color when active so it visually reads as "halted / attention"
+   rather than the regular speed-active blue. */
+.battle-speed-bar .speed-btn.speed-pause {
+  min-width: 36px;
+  font-size: 14px;
+}
+.battle-speed-bar .speed-btn.speed-pause.speed-active {
+  background: var(--warn); border-color: var(--warn);
 }
 
 /* Start Battle + Continue share this style — same height/footprint as the speed bar
