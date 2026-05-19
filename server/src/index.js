@@ -82,6 +82,12 @@ const teamMemberSchema = {
     abilityOverride: { type: ['string', 'null'], maxLength: 32 },
     fainted:         { type: ['boolean', 'null'] },
     shiny:           { type: ['boolean', 'null'] },
+    // Held item id (e.g. 'leftovers', 'rockyHelmet'). Validated as a short slug;
+    // the server doesn't need to know the registry — the client's engine reads it.
+    // Without this field whitelisted, `additionalProperties: false` rejects every
+    // payload from clients on the held-items patch and pushes them into the local
+    // findLocalMatch fallback (= matched against their own past snapshots).
+    heldItem:        { type: ['string', 'null'], maxLength: 32 },
   },
 };
 

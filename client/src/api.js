@@ -59,6 +59,10 @@ function teamSnapshot(state) {
     hpBonus: p.hpBonus, atkBonus: p.atkBonus, spdBonus: p.spdBonus,
     type1: p.type1, type2: p.type2, abilityOverride: p.ability,
     shiny: !!p.shiny,
+    // Held item travels with the live matchmaking payload so the snapshot the server
+    // writes for this player reflects their CURRENT loadout, not just what was on
+    // their last zone-clear/run-end save.
+    heldItem: p.heldItem || null,
   }));
 }
 
