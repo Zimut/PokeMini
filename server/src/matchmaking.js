@@ -32,12 +32,6 @@ function buildGymLeaderRoster(zone) {
 }
 
 const SNAPSHOT_MAX_AGE_MS = 24 * 60 * 60 * 1000;
-// Per-player cap — each player is represented in the matchmaking pool by exactly
-// ONE snapshot, their most recent. Every new write prunes the player's older rows
-// so they're never both pullable at once. This means a player who just finished
-// a run replaces their previous standing in the pool with that new team — the
-// pool reflects current skill instead of historical attempts.
-const PER_PLAYER_SNAPSHOT_CAP = 1;
 
 // Cascade — each pass relaxes more filters within the SAME zone. We never widen
 // across zones because the level difference between zones (≈7 levels per step)
@@ -97,18 +91,20 @@ export function findOpponent({ zone, badges, strikes, elo, excludeName = '' }) {
 }
 
 export function writeSnapshot({ zone, badges, strikes, elo, runId, playerName, team }) {
+  // Per-(player, run) dedup — if we have both a player name AND a run id, drop any
+  // existing snapshot from this same player+run before inserting the new one. This
+  // keeps a single player's pool footprint to at most one snapshot per run they've
+  // played, but lets them have multiple entries across different runs so a Z3 team
+  // and a Z5 team from the same player both stay reachable to matchmakers in
+  // those zones. Writes that arrive without a runId (legacy clients, anonymous
+  // batches) just insert without dedup and rely on the 24h age prune.
+  if (playerName && runId != null) {
+    queries.deleteSnapshotsForPlayerRun.run({ name: playerName, runId });
+  }
   queries.insertSnapshot.run({
     zone, badges, strikes, eloBucket: eloBucket(elo),
     runId, playerName, teamJson: JSON.stringify(team), ts: Date.now(),
   });
-  // Enforce the per-player cap. We check count first so the prune query (which
-  // is range-scanning) only runs when we'd actually exceed.
-  if (playerName) {
-    const { n } = queries.countSnapshotsForPlayer.get(playerName);
-    if (n > PER_PLAYER_SNAPSHOT_CAP) {
-      queries.pruneOldestForPlayer.run({ name: playerName, keep: PER_PLAYER_SNAPSHOT_CAP });
-    }
-  }
 }
 
 export function pruneOld() {

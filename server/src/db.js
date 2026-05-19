@@ -30,23 +30,26 @@ if (!tableHasColumn('players', 'claim_token')) {
 if (!tableHasColumn('players', 'country')) {
   db.exec('ALTER TABLE players ADD COLUMN country TEXT');
 }
-// One-per-player snapshot rule — enforce on existing data on every startup. Idempotent:
-// once collapsed, the EXISTS subquery finds nothing newer for any row and the DELETE
-// is a no-op. Anonymous snapshots (empty/NULL player_name) are left alone — they don't
-// belong to any "player" the rule can dedupe against. Bounded to recent rows because
-// pruneOld already drops anything older than SNAPSHOT_MAX_AGE_MS, so the table stays
-// small enough for the EXISTS scan to be cheap even on each boot.
+// One-per-(player, run) snapshot rule — enforce on existing data on every startup.
+// Idempotent: once collapsed, the EXISTS subquery finds nothing newer for any (player,
+// run_id) pair and the DELETE is a no-op. Rows with NULL run_id are left alone (legacy
+// pre-tracking writes) — they'll age out via the 24h prune. Anonymous snapshots also
+// untouched. The new rule preserves variety: a player who completes multiple runs ends
+// up with one snapshot per run in the pool, instead of being collapsed to a single
+// entry that gets nuked on every new /pvp/match write.
 const dupCleanup = db.prepare(`
   DELETE FROM snapshots
   WHERE player_name IS NOT NULL AND player_name <> ''
+    AND run_id IS NOT NULL
     AND EXISTS (
       SELECT 1 FROM snapshots s2
       WHERE s2.player_name = snapshots.player_name COLLATE NOCASE
+        AND s2.run_id      = snapshots.run_id
         AND s2.created_at  > snapshots.created_at
     )
 `).run();
 if (dupCleanup.changes > 0) {
-  console.log(`[snapshots] cleanup: dropped ${dupCleanup.changes} older per-player rows`);
+  console.log(`[snapshots] cleanup: dropped ${dupCleanup.changes} older per-(player,run) rows`);
 }
 
 export default db;
@@ -109,11 +112,11 @@ export const queries = {
   setPlayerCountry: db.prepare(
     `UPDATE players SET country = @country WHERE id = @id`),
 
-  // Per-player snapshot cap — count + delete-oldest to keep one player from spamming
-  // the matchmaking pool. Indexed by player_name (case-insensitive).
+  // Per-player snapshot cap — count + delete-oldest, kept around for any future
+  // flood-control use. Day-to-day dedup is now handled by deleteSnapshotsForPlayerRun
+  // below (one snapshot per player per run).
   countSnapshotsForPlayer: db.prepare(
     `SELECT COUNT(*) AS n FROM snapshots WHERE player_name = ? COLLATE NOCASE`),
-  // Delete all but the newest N rows for a given player.
   pruneOldestForPlayer: db.prepare(`
     DELETE FROM snapshots
     WHERE rowid IN (
@@ -122,6 +125,12 @@ export const queries = {
       ORDER BY created_at DESC
       LIMIT -1 OFFSET @keep
     )`),
+  // Per-(player, run) dedup — called by writeSnapshot before insert so a single run
+  // is represented by at most one snapshot in the pool (its latest write). Multiple
+  // runs from the same player coexist freely. Both args must match: same case-
+  // insensitive name AND same run_id integer.
+  deleteSnapshotsForPlayerRun: db.prepare(
+    `DELETE FROM snapshots WHERE player_name = @name COLLATE NOCASE AND run_id = @runId`),
 };
 
 // ─── Player creation / claim ─────────────────────────────────────────────

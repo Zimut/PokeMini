@@ -290,6 +290,9 @@ fastify.post('/run/end', {
         result: { type: 'string', enum: ['won', 'lost', 'aborted'] },
         zone:   { type: 'integer', minimum: 1, maximum: 7 },
         badges: { type: 'integer', minimum: 0, maximum: 7 },
+        // Run seed — used as the per-run identifier for snapshot dedup. Optional so
+        // older clients without the field still work; they just bypass the dedup.
+        seed:   { type: ['integer', 'null'] },
         team:   teamSchema,
       },
     },
@@ -318,7 +321,10 @@ fastify.post('/run/end', {
       writeSnapshot({
         zone, badges, strikes: 3,
         elo: newElo,            // post-delta value for matchmaking bucket
-        runId: null, playerName: req.authPlayer.name, team,
+        // Seed comes through as a full 53-bit integer (Date.now()-sized) — bitwise
+        // ops would truncate, so coerce via Number() instead.
+        runId: req.body.seed != null ? Number(req.body.seed) : null,
+        playerName: req.authPlayer.name, team,
       });
     }
   }
@@ -336,18 +342,27 @@ fastify.post('/pvp/match', {
         zone:    { type: 'integer', minimum: 1, maximum: 7 },
         badges:  { type: 'integer', minimum: 0, maximum: 7 },
         strikes: { type: 'integer', minimum: 0, maximum: 3 },
+        // Run seed — per-run identifier. With this, mid-run /pvp/match writes from
+        // the same player dedup against each other but DON'T wipe snapshots from
+        // their prior runs. Optional for legacy clients.
+        seed:    { type: ['integer', 'null'] },
         team:    teamSchema,
       },
     },
   },
   config: { requiresAuth: true, rateLimit: { max: 10, timeWindow: '1 minute' } },
 }, async (req) => {
-  const { zone, badges = 0, strikes = 3, team } = req.body;
+  const { zone, badges = 0, strikes = 3, team, seed } = req.body;
   // Use server-side ELO for bucket selection — the client doesn't get a vote here.
   const elo = req.authPlayer.elo | 0;
   const opponent = findOpponent({ zone, badges, strikes, elo, excludeName: req.authPlayer.name });
   if (team && team.length) {
-    writeSnapshot({ zone, badges, strikes, elo, runId: null, playerName: req.authPlayer.name, team });
+    writeSnapshot({
+      zone, badges, strikes, elo,
+      // Date.now()-sized seed; bitwise truncation would corrupt it.
+      runId: seed != null ? Number(seed) : null,
+      playerName: req.authPlayer.name, team,
+    });
   }
   return opponent;
 });
@@ -441,7 +456,9 @@ fastify.post('/pvp/snapshots', {
       badges: s.badges | 0,
       strikes: 3,
       elo: req.authPlayer.elo | 0,    // server-side, not client value
-      runId: null,
+      // Use the snapshot's recorded seed as the per-run id so the dedup in
+      // writeSnapshot collapses repeat submissions from the same run.
+      runId: s.seed != null ? Number(s.seed) : null,
       playerName,
       team: s.roster,
     });

@@ -85,6 +85,9 @@ export const api = {
       return await post('/run/end', authBody(state, {
         mode: state.mode, result,
         zone: state.zone, badges: state.badges,
+        // Send the run seed so the server can dedup this run's snapshot against any
+        // earlier write from the same run (e.g. mid-run /pvp/match writes).
+        seed: Number(state.seed) || 0,
         team: teamSnapshot(state),
       }));
     } catch (e) { /* server may not be running; ignore */ }
@@ -94,6 +97,12 @@ export const api = {
   async matchPvp(state) {
     return post('/pvp/match', authBody(state, {
       zone: state.zone, badges: state.badges, strikes: state.strikes,
+      // Per-run identifier for snapshot dedup — server uses this so repeat
+      // matchmaking calls within the same run don't accumulate stale entries,
+      // while DIFFERENT runs from the same player still each land their own
+      // snapshot in the pool (was the bug — old code collapsed to 1 per player
+      // total, so most players had nothing reachable in matchmaking).
+      seed: state.seed | 0,
       team: teamSnapshot(state),
     }));
   },
