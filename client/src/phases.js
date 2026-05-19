@@ -1865,12 +1865,21 @@ function showPreBattle() {
   renderRanked(t('preBattle.matchmaking'), null, false);
   (async () => {
     let resolved = null;
+    let serverRejected = false;          // server is UP but said no (auth/validation)
     try {
       const { api } = await import('./api.js');
       const m = await api.matchPvp(state);
       if (m && m.roster && m.roster.length) resolved = { roster: m.roster, opponentName: m.opponentName || 'Ghost' };
-    } catch (e) { /* server unavailable — fall through */ }
-    if (!resolved) {
+    } catch (e) {
+      // 4xx = server up, request rejected. 5xx / network error = server unreachable.
+      // The local-snapshot fallback below returns one of THIS player's past teams, so
+      // it's only a sensible substitute when the server is genuinely unreachable. If
+      // the server is up and rejecting us (auth failure after a DB wipe, schema
+      // mismatch, etc.) we'd otherwise show the player fighting themselves, which is
+      // confusing. Force the gym-leader fallback instead.
+      if (e && e.status >= 400 && e.status < 500) serverRejected = true;
+    }
+    if (!resolved && !serverRejected) {
       const local = findLocalMatch(state);
       if (local) resolved = { roster: local.roster, opponentName: local.opponentName };
     }
@@ -1914,6 +1923,7 @@ async function startRankedBattle() {
     return;
   }
   setPhase(`${phaseHeader(t('preBattle.matchmaking'), '')}<div class="message">${t('battle.searching')}</div>`);
+  let serverRejected = false;
   try {
     const { api } = await import('./api.js');
     const m = await api.matchPvp(state);
@@ -1921,11 +1931,18 @@ async function startRankedBattle() {
       runBattle(m.roster, `vs ${m.opponentName || 'Ghost'}`, onBattleResult);
       return;
     }
-  } catch (e) { /* server unavailable */ }
-  const local = findLocalMatch(state);
-  if (local) {
-    runBattle(local.roster, `vs ${local.opponentName}`, onBattleResult);
-    return;
+  } catch (e) {
+    // Same auth/validation discriminator as showPreBattle's fallback chain — see the
+    // long-form comment there. tl;dr: if the server is up and rejecting us we'd just
+    // show the player fighting themselves via findLocalMatch, so skip to gym instead.
+    if (e && e.status >= 400 && e.status < 500) serverRejected = true;
+  }
+  if (!serverRejected) {
+    const local = findLocalMatch(state);
+    if (local) {
+      runBattle(local.roster, `vs ${local.opponentName}`, onBattleResult);
+      return;
+    }
   }
   // Cold-start fallback: gym-leader ghost with the singleplayer level formula.
   const leaderName = Object.keys(GYM_LEADERS)[state.zone - 1];
