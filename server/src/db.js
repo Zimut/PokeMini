@@ -30,26 +30,25 @@ if (!tableHasColumn('players', 'claim_token')) {
 if (!tableHasColumn('players', 'country')) {
   db.exec('ALTER TABLE players ADD COLUMN country TEXT');
 }
-// One-per-(player, run) snapshot rule — enforce on existing data on every startup.
-// Idempotent: once collapsed, the EXISTS subquery finds nothing newer for any (player,
-// run_id) pair and the DELETE is a no-op. Rows with NULL run_id are left alone (legacy
-// pre-tracking writes) — they'll age out via the 24h prune. Anonymous snapshots also
-// untouched. The new rule preserves variety: a player who completes multiple runs ends
-// up with one snapshot per run in the pool, instead of being collapsed to a single
-// entry that gets nuked on every new /pvp/match write.
+// Single-run-per-player rule — enforce on existing data on every startup. For each
+// player, keep only the snapshots whose run_id matches the run that produced their
+// MOST RECENT row; delete everything from prior runs (and any legacy NULL-run rows
+// that exist alongside a real run). Anonymous snapshots are left alone — they don't
+// belong to any player. Idempotent: once collapsed, the EXISTS subquery finds no
+// newer-row-from-different-run for any survivor and the DELETE is a no-op.
 const dupCleanup = db.prepare(`
   DELETE FROM snapshots
   WHERE player_name IS NOT NULL AND player_name <> ''
-    AND run_id IS NOT NULL
     AND EXISTS (
       SELECT 1 FROM snapshots s2
       WHERE s2.player_name = snapshots.player_name COLLATE NOCASE
-        AND s2.run_id      = snapshots.run_id
-        AND s2.created_at  > snapshots.created_at
+        AND s2.run_id IS NOT NULL
+        AND s2.run_id IS NOT snapshots.run_id    -- different run, NULL-safe
+        AND s2.created_at > snapshots.created_at
     )
 `).run();
 if (dupCleanup.changes > 0) {
-  console.log(`[snapshots] cleanup: dropped ${dupCleanup.changes} older per-(player,run) rows`);
+  console.log(`[snapshots] cleanup: dropped ${dupCleanup.changes} rows from older runs`);
 }
 
 export default db;
@@ -125,12 +124,18 @@ export const queries = {
       ORDER BY created_at DESC
       LIMIT -1 OFFSET @keep
     )`),
-  // Per-(player, run) dedup — called by writeSnapshot before insert so a single run
-  // is represented by at most one snapshot in the pool (its latest write). Multiple
-  // runs from the same player coexist freely. Both args must match: same case-
-  // insensitive name AND same run_id integer.
-  deleteSnapshotsForPlayerRun: db.prepare(
-    `DELETE FROM snapshots WHERE player_name = @name COLLATE NOCASE AND run_id = @runId`),
+  // Single-run-per-player rule — called by writeSnapshot before insert. Deletes every
+  // snapshot from this player whose run_id is NOT the incoming run, plus any legacy
+  // NULL-run_id rows that predate the field. The new write then lands, so the pool's
+  // entries for this player are exclusively from their CURRENT run. Each new run
+  // wholesale replaces the previous one in the pool. Multiple snapshots within the
+  // SAME run are preserved — that's the whole point: one snapshot per battle/zone
+  // accumulates as the player progresses, giving matchmakers in any zone a real team
+  // to fight from this player.
+  deleteOtherRunsForPlayer: db.prepare(
+    `DELETE FROM snapshots
+     WHERE player_name = @name COLLATE NOCASE
+       AND (run_id IS NULL OR run_id <> @runId)`),
 };
 
 // ─── Player creation / claim ─────────────────────────────────────────────

@@ -91,15 +91,18 @@ export function findOpponent({ zone, badges, strikes, elo, excludeName = '' }) {
 }
 
 export function writeSnapshot({ zone, badges, strikes, elo, runId, playerName, team }) {
-  // Per-(player, run) dedup — if we have both a player name AND a run id, drop any
-  // existing snapshot from this same player+run before inserting the new one. This
-  // keeps a single player's pool footprint to at most one snapshot per run they've
-  // played, but lets them have multiple entries across different runs so a Z3 team
-  // and a Z5 team from the same player both stay reachable to matchmakers in
-  // those zones. Writes that arrive without a runId (legacy clients, anonymous
-  // batches) just insert without dedup and rely on the 24h age prune.
+  // Single-run-per-player rule: when a write comes in for (player, run X), wipe every
+  // OTHER snapshot from that player whose run isn't X (plus any legacy NULL-run rows),
+  // then insert. Within run X, snapshots accumulate — one per battle/zone — giving
+  // matchmakers a team from that player at every zone they've reached. Starting a new
+  // run (different seed → different runId) wholesale replaces the player's pool entries
+  // with the new run's snapshots as they trickle in.
+  //
+  // Writes without a runId (anonymous batches, legacy clients) skip the dedup and just
+  // insert — they'll age out via the 24h prune. We don't wipe other players' rows in
+  // that case because we can't tie the write to a specific run.
   if (playerName && runId != null) {
-    queries.deleteSnapshotsForPlayerRun.run({ name: playerName, runId });
+    queries.deleteOtherRunsForPlayer.run({ name: playerName, runId });
   }
   queries.insertSnapshot.run({
     zone, badges, strikes, eloBucket: eloBucket(elo),
