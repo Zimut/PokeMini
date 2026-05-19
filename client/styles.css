@@ -743,21 +743,30 @@ button.primary:hover { background: var(--accent-deep); border-color: var(--accen
   position: absolute;
   top: 4px; left: 6px;    /* slot top-left; the centered status-row occupies the middle,
                              so the badge clears it for typical 0–2 status icons */
-  width: 12px; height: 12px;     /* ~3× smaller than the original 22px — reads as a tiny
-                                    corner indicator now, full info still in the tooltip */
+  width: 24px; height: 24px;     /* badge container — icon is constrained to fit inside
+                                    via the more-specific .battle-slot .battle-held-badge
+                                    img selector below */
   z-index: 4;
   pointer-events: auto;
   cursor: help;
   background: rgba(255, 255, 255, 0.82);
-  border-radius: 3px;
-  padding: 0;                    /* drop padding so the icon fills the small footprint */
+  border-radius: 4px;
+  padding: 2px;
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.20);
+  box-sizing: border-box;       /* padding stays inside the 24px, doesn't push it to 28 */
 }
-.battle-held-badge img {
+/* Selector must beat `.battle-slot img { width: 112px; height: 112px }` which is later
+   in the stylesheet and was making the held-item icons render at sprite size (the bug
+   visible in-game where items rendered way outside their holder). Adding `.battle-slot`
+   to the chain gives this rule equal specificity but later position wins, AND we set
+   width/height in absolute terms to override the 112px from the parent rule. */
+.battle-slot .battle-held-badge img {
   width: 100%; height: 100%;
+  max-width: 100%; max-height: 100%;
   image-rendering: pixelated;
   display: block;
   pointer-events: none;
+  object-fit: contain;          /* if the source asset isn't square, scale to fit without crop */
 }
 .slot.empty {
   opacity: 0.5; cursor: default; min-height: 160px;
